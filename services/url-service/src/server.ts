@@ -121,6 +121,19 @@ app.get(
         type: "object",
         required: ["code"],
         properties: { code: { type: "string", minLength: 1, maxLength: 64 } }
+      },
+      response: {
+        200: {
+          type: "object",
+          properties: {
+            code: { type: "string" },
+            long_url: { type: "string" }
+          }
+        },
+        404: {
+          type: "object",
+          properties: { error: { type: "string" } }
+        }
       }
     }
   },
@@ -128,7 +141,11 @@ app.get(
     const { code } = req.params as { code: string };
     const rec = await store.get(code);
     if (!rec) return reply.code(404).send({ error: "not_found" });
-    return reply.send(rec);
+
+    return reply.send({
+      code: rec.code,
+      long_url: rec.longUrl
+    });
   }
 );
 
