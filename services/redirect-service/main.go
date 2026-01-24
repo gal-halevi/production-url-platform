@@ -22,7 +22,6 @@ type Config struct {
 	Host        string
 	Port        int
 	BaseURL     string
-	DefaultDest string
 	LogJSON     bool
 
 	AnalyticsBaseURL  string
@@ -41,12 +40,6 @@ func loadConfig() (Config, error) {
 
 	// Base URL for url-service resolve endpoint.
 	baseURL := getenv("URL_SERVICE_BASE_URL", "http://url-service:3000")
-
-	// Legacy fallback (kept for now; redirects are resolved via url-service).
-	defaultDest := getenv("DEFAULT_REDIRECT_URL", "https://example.com")
-	if !isHTTPURL(defaultDest) {
-		return Config{}, errors.New("DEFAULT_REDIRECT_URL must be http/https URL")
-	}
 
 	logJSON := getenv("LOG_JSON", "false") == "true"
 
@@ -68,7 +61,6 @@ func loadConfig() (Config, error) {
 		Host:        host,
 		Port:        port,
 		BaseURL:     baseURL,
-		DefaultDest: defaultDest,
 		LogJSON:     logJSON,
 
 		AnalyticsBaseURL:  analyticsBase,
