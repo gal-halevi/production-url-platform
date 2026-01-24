@@ -13,8 +13,8 @@ A production-style URL platform built to demonstrate modern DevOps practices end
 - Observability: metrics, dashboards, and alerting (Prometheus/Grafana)
 
 ## Project docs
-- Architecture overview: `PROJECT_ARCHITECTURE.md`
-- Milestones and plan: `MILESTONE_TRACKER.md`
+- Architecture overview: [PROJECT_ARCHITECTURE.md](./docs/PROJECT_ARCHITECTURE.md)
+- Milestones and plan: [MILESTONE_TRACKER.md](./docs/MILESTONE_TRACKER.md)
 
 ## Status
 Work in progress. This repository is built milestone-by-milestone with PRs and documented decisions.
