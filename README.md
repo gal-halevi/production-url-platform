@@ -2,6 +2,18 @@
 
 A production-style URL platform built to demonstrate modern DevOps practices end-to-end.
 
+## Services and runtime (local)
+
+This project consists of three services:
+
+- url-service: creates and stores short URLs
+- redirect-service: handles redirects and records usage
+- analytics-service: aggregates redirect counts
+
+All services communicate over HTTP and share a single PostgreSQL database in local development.
+
+See Docker Compose configuration for exact wiring.
+
 ## What this repo demonstrates
 - Containerized services with Docker
 - Local orchestration with Docker Compose
