@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -30,10 +32,10 @@ func loadConfig() (Config, error) {
 		return Config{}, errors.New("invalid PORT")
 	}
 
-	// For future use (when this service calls url-service).
+	// Base URL for url-service resolve endpoint.
 	baseURL := getenv("URL_SERVICE_BASE_URL", "http://url-service:3000")
 
-	// For now we redirect to a fixed destination (until we wire url-service).
+	// Legacy fallback (kept for now; redirects are resolved via url-service).
 	defaultDest := getenv("DEFAULT_REDIRECT_URL", "https://example.com")
 	if !isHTTPURL(defaultDest) {
 		return Config{}, errors.New("DEFAULT_REDIRECT_URL must be http/https URL")
@@ -60,6 +62,49 @@ func getenv(key, def string) string {
 func isHTTPURL(s string) bool {
 	s = strings.ToLower(strings.TrimSpace(s))
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
+type resolveResp struct {
+	Code    string `json:"code"`
+	LongURL string `json:"long_url"`
+}
+
+func resolveLongURL(client *http.Client, base string, code string) (string, int, error) {
+	base = strings.TrimRight(base, "/")
+	endpoint := base + "/urls/" + url.PathEscape(code)
+
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", 0, err
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return "", http.StatusNotFound, nil
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		msg := strings.TrimSpace(string(b))
+		if msg == "" {
+			msg = resp.Status
+		}
+		return "", resp.StatusCode, errors.New("url-service error: " + msg)
+	}
+
+	var rr resolveResp
+	if err := json.NewDecoder(resp.Body).Decode(&rr); err != nil {
+		return "", resp.StatusCode, err
+	}
+	if !isHTTPURL(rr.LongURL) {
+		return "", resp.StatusCode, errors.New("invalid long_url from url-service")
+	}
+	return rr.LongURL, resp.StatusCode, nil
 }
 
 type logLine struct {
@@ -99,6 +144,7 @@ func main() {
 	}
 
 	logf := logger(cfg)
+	client := &http.Client{Timeout: 1500 * time.Millisecond}
 
 	mux := http.NewServeMux()
 
@@ -137,9 +183,20 @@ func main() {
 			return
 		}
 
-		// For this milestone, always redirect to a fixed destination.
-		// Next milestone: fetch destination from url-service and record analytics.
-		dest := cfg.DefaultDest
+		dest, status, err := resolveLongURL(client, cfg.BaseURL, code)
+		if err != nil {
+			logf("error", "resolve failed", map[string]interface{}{
+				"code":   code,
+				"status": status,
+				"err":    err.Error(),
+			})
+			http.Error(w, "bad_gateway", http.StatusBadGateway)
+			return
+		}
+		if status == http.StatusNotFound || dest == "" {
+			http.Error(w, "not_found", http.StatusNotFound)
+			return
+		}
 
 		logf("info", "redirect", map[string]interface{}{
 			"code": code,
