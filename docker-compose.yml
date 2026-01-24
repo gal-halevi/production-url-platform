@@ -39,6 +39,7 @@ services:
       context: services/redirect-service
     environment:
       PORT: "8080"
+      URL_SERVICE_BASE_URL: "http://url-service:3000"
       DEFAULT_REDIRECT_URL: "https://example.com"
     ports:
       - "8080:8080"
