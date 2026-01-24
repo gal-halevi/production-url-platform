@@ -1,0 +1,56 @@
+name: production-url-platform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: url_platform
+      POSTGRES_USER: url_platform
+      POSTGRES_PASSWORD: url_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U url_platform -d url_platform -h 127.0.0.1 -p 5432"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  url-service:
+    build:
+      context: services/url-service
+    environment:
+      PORT: "3000"
+      BASE_URL: "http://localhost:3000"
+      STORAGE_MODE: "postgres"
+      DATABASE_URL: "postgresql://url_platform:url_platform@postgres:5432/url_platform"
+      LOG_LEVEL: "info"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  redirect-service:
+    build:
+      context: services/redirect-service
+    environment:
+      PORT: "8080"
+      DEFAULT_REDIRECT_URL: "https://example.com"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - url-service
+
+  analytics-service:
+    build:
+      context: services/analytics-service
+    environment:
+      PORT: "8000"
+      LOG_LEVEL: "info"
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:
