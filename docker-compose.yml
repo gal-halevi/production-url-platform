@@ -16,6 +16,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
 
   url-service:
     build:
@@ -31,6 +32,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
 
   redirect-service:
     build:
@@ -42,6 +44,7 @@ services:
       - "8080:8080"
     depends_on:
       - url-service
+    restart: unless-stopped
 
   analytics-service:
     build:
@@ -51,6 +54,7 @@ services:
       LOG_LEVEL: "info"
     ports:
       - "8000:8000"
+    restart: unless-stopped
 
 volumes:
   postgres_data:
