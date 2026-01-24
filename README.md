@@ -39,6 +39,13 @@ curl -i http://localhost:8080/health
 curl -i http://localhost:8080/r/example
 ```
 
+### analytics-service
+```bash
+docker build -t analytics-service:dev services/analytics-service
+docker run --rm -p 8000:8000 analytics-service:dev
+curl -s http://localhost:8000/health
+```
+
 ## Project docs
 - Architecture overview: [PROJECT_ARCHITECTURE.md](./docs/PROJECT_ARCHITECTURE.md)
 - Milestones and plan: [MILESTONE_TRACKER.md](./docs/MILESTONE_TRACKER.md)
