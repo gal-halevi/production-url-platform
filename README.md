@@ -22,12 +22,21 @@ All services communicate over HTTP and share a single PostgreSQL database in loc
 See Docker Compose configuration for exact wiring.
 
 ## Quickstart (local)
-Run the url-service container:
+You can run individual services locally using Docker.
 
+### url-service
 ```bash
 docker build -t url-service:dev services/url-service
 docker run --rm -e PORT=3000 -e BASE_URL=http://localhost:3000 -p 3000:3000 url-service:dev
 curl -s http://localhost:3000/health
+```
+
+### redirect-service
+```bash
+docker build -t redirect-service:dev services/redirect-service
+docker run --rm -p 8080:8080 redirect-service:dev
+curl -i http://localhost:8080/health
+curl -i http://localhost:8080/r/example
 ```
 
 ## Project docs
