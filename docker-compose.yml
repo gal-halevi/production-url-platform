@@ -41,6 +41,7 @@ services:
       PORT: "8080"
       URL_SERVICE_BASE_URL: "http://url-service:3000"
       DEFAULT_REDIRECT_URL: "https://example.com"
+      ANALYTICS_SERVICE_BASE_URL: "http://analytics-service:8000"
     ports:
       - "8080:8080"
     depends_on:

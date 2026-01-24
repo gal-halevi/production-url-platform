@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -22,10 +24,15 @@ type Config struct {
 	BaseURL     string
 	DefaultDest string
 	LogJSON     bool
+
+	AnalyticsBaseURL  string
+	AnalyticsTimeout  time.Duration
+	AnalyticsQueueLen int
 }
 
 func loadConfig() (Config, error) {
 	host := getenv("HOST", "0.0.0.0")
+
 	portStr := getenv("PORT", "8080")
 	port, err := strconv.Atoi(portStr)
 	if err != nil || port <= 0 || port > 65535 {
@@ -43,12 +50,30 @@ func loadConfig() (Config, error) {
 
 	logJSON := getenv("LOG_JSON", "false") == "true"
 
+	analyticsBase := getenv("ANALYTICS_SERVICE_BASE_URL", "http://analytics-service:8000")
+
+	timeoutMs := getenv("ANALYTICS_TIMEOUT_MS", "300")
+	tms, err := strconv.Atoi(timeoutMs)
+	if err != nil || tms <= 0 || tms > 10_000 {
+		return Config{}, errors.New("invalid ANALYTICS_TIMEOUT_MS")
+	}
+
+	queueLenStr := getenv("ANALYTICS_QUEUE_SIZE", "256")
+	ql, err := strconv.Atoi(queueLenStr)
+	if err != nil || ql <= 0 || ql > 100_000 {
+		return Config{}, errors.New("invalid ANALYTICS_QUEUE_SIZE")
+	}
+
 	return Config{
 		Host:        host,
 		Port:        port,
 		BaseURL:     baseURL,
 		DefaultDest: defaultDest,
 		LogJSON:     logJSON,
+
+		AnalyticsBaseURL:  analyticsBase,
+		AnalyticsTimeout:  time.Duration(tms) * time.Millisecond,
+		AnalyticsQueueLen: ql,
 	}, nil
 }
 
@@ -137,6 +162,93 @@ func logger(cfg Config) func(level, msg string, fields map[string]interface{}) {
 	}
 }
 
+type analyticsEvent struct {
+	Code      string `json:"code"`
+	TS        int64  `json:"ts,omitempty"`
+	UserAgent string `json:"user_agent,omitempty"`
+	Referrer  string `json:"referrer,omitempty"`
+}
+
+type analyticsSink struct {
+	baseURL string
+	client  *http.Client
+	logf    func(level, msg string, fields map[string]interface{})
+
+	ch   chan analyticsEvent
+	wg   sync.WaitGroup
+	once sync.Once
+}
+
+func newAnalyticsSink(cfg Config, logf func(level, msg string, fields map[string]interface{})) *analyticsSink {
+	return &analyticsSink{
+		baseURL: strings.TrimRight(cfg.AnalyticsBaseURL, "/"),
+		client: &http.Client{Timeout: cfg.AnalyticsTimeout},
+		logf:   logf,
+		ch:     make(chan analyticsEvent, cfg.AnalyticsQueueLen),
+	}
+}
+
+func (s *analyticsSink) Start(ctx context.Context) {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case evt, ok := <-s.ch:
+				if !ok {
+					return
+				}
+				s.post(evt)
+			}
+		}
+	}()
+}
+
+func (s *analyticsSink) Stop() {
+	s.once.Do(func() {
+		close(s.ch)
+	})
+	s.wg.Wait()
+}
+
+func (s *analyticsSink) Enqueue(evt analyticsEvent) bool {
+	select {
+	case s.ch <- evt:
+		return true
+	default:
+		// Queue full; drop to protect redirect latency.
+		return false
+	}
+}
+
+func (s *analyticsSink) post(evt analyticsEvent) {
+	body, _ := json.Marshal(evt)
+	req, err := http.NewRequest(http.MethodPost, s.baseURL+"/events", bytes.NewReader(body))
+	if err != nil {
+		s.logf("error", "analytics request build failed", map[string]interface{}{"err": err.Error()})
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		s.logf("error", "analytics post failed", map[string]interface{}{"err": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		s.logf("error", "analytics non-2xx", map[string]interface{}{
+			"status": resp.StatusCode,
+			"body":   strings.TrimSpace(string(b)),
+		})
+	}
+}
+
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -144,7 +256,15 @@ func main() {
 	}
 
 	logf := logger(cfg)
-	client := &http.Client{Timeout: 1500 * time.Millisecond}
+	resolveClient := &http.Client{Timeout: 1500 * time.Millisecond}
+
+	// Graceful shutdown context
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Start analytics sink worker (bounded queue)
+	sink := newAnalyticsSink(cfg, logf)
+	sink.Start(ctx)
 
 	mux := http.NewServeMux()
 
@@ -160,7 +280,6 @@ func main() {
 	})
 
 	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-		// Readiness is trivial right now (no dependencies).
 		if r.Method != http.MethodGet {
 			http.Error(w, "method_not_allowed", http.StatusMethodNotAllowed)
 			return
@@ -175,15 +294,13 @@ func main() {
 			return
 		}
 
-		code := strings.TrimPrefix(r.URL.Path, "/r/")
-		code = strings.TrimSpace(code)
-
+		code := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/r/"))
 		if code == "" || len(code) > 64 {
 			http.Error(w, "invalid_code", http.StatusBadRequest)
 			return
 		}
 
-		dest, status, err := resolveLongURL(client, cfg.BaseURL, code)
+		dest, status, err := resolveLongURL(resolveClient, cfg.BaseURL, code)
 		if err != nil {
 			logf("error", "resolve failed", map[string]interface{}{
 				"code":   code,
@@ -196,6 +313,22 @@ func main() {
 		if status == http.StatusNotFound || dest == "" {
 			http.Error(w, "not_found", http.StatusNotFound)
 			return
+		}
+
+		// Emit analytics event asynchronously (best-effort).
+		ref := strings.TrimSpace(r.Referer())
+		evt := analyticsEvent{
+			Code:      code,
+			TS:        time.Now().Unix(),
+			UserAgent: r.UserAgent(),
+		}
+		if isHTTPURL(ref) {
+			evt.Referrer = ref
+		}
+		if ok := sink.Enqueue(evt); !ok {
+			logf("error", "analytics queue full (event dropped)", map[string]interface{}{
+				"code": code,
+			})
 		}
 
 		logf("info", "redirect", map[string]interface{}{
@@ -212,7 +345,6 @@ func main() {
 		http.Error(w, "not_found", http.StatusNotFound)
 	})
 
-	// Wrap with basic request logging + timeouts.
 	srv := &http.Server{
 		Addr:              cfg.Host + ":" + strconv.Itoa(cfg.Port),
 		Handler:           withRequestLogging(mux, logf),
@@ -221,10 +353,6 @@ func main() {
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-
-	// Graceful shutdown
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	go func() {
 		logf("info", "redirect-service started", map[string]interface{}{
@@ -242,7 +370,10 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
 	_ = srv.Shutdown(shutdownCtx)
+	sink.Stop()
+
 	logf("info", "server stopped", nil)
 }
 
