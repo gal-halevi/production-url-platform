@@ -22,30 +22,34 @@ All services communicate over HTTP and share a single PostgreSQL database in loc
 See Docker Compose configuration for exact wiring.
 
 ## Quickstart (local)
-You can run individual services locally using Docker.
 
-### url-service
+Bring up the full local stack:
 ```bash
-docker build -t url-service:dev services/url-service
-docker run --rm -e PORT=3000 -e BASE_URL=http://localhost:3000 -p 3000:3000 url-service:dev
+docker compose up --build
+```
+
+Smoke checks:
+```bash
 curl -s http://localhost:3000/health
-```
-
-### redirect-service
-```bash
-docker build -t redirect-service:dev services/redirect-service
-docker run --rm -p 8080:8080 redirect-service:dev
 curl -i http://localhost:8080/health
-curl -i http://localhost:8080/r/example
-```
-
-### analytics-service
-```bash
-docker build -t analytics-service:dev services/analytics-service
-docker run --rm -p 8000:8000 analytics-service:dev
 curl -s http://localhost:8000/health
 ```
 
+Create a short URL (stored in Postgres):
+```bash
+curl -s -X POST http://localhost:3000/urls \
+  -H 'content-type: application/json' \
+  -d '{"long_url":"https://example.com"}'
+```
+
+Redirect (temporary fixed destination for now):
+```bash
+curl -i http://localhost:8080/r/example
+```
+Stop:
+```bash
+docker compose down
+```
 ## Project docs
 - Architecture overview: [PROJECT_ARCHITECTURE.md](./docs/PROJECT_ARCHITECTURE.md)
 - Milestones and plan: [MILESTONE_TRACKER.md](./docs/MILESTONE_TRACKER.md)
