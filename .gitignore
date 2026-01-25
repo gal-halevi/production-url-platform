@@ -48,6 +48,7 @@ terraform.rc
 *.tgz
 charts/**/charts/
 *.rendered.yaml
+k8s/manifests/05-secrets.yaml
 
 # Docker
 *.log
