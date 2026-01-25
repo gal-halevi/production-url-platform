@@ -7,7 +7,6 @@ data:
   PORT: "3000"
   HOST: "0.0.0.0"
   STORAGE_MODE: "postgres"
-  DATABASE_URL: "postgresql://url_platform:url_platform@postgres:5432/url_platform"
   LOG_LEVEL: "info"
   BODY_LIMIT_BYTES: "1048576"
   RATE_LIMIT_ENABLED: "true"
@@ -32,6 +31,31 @@ spec:
       labels:
         app: url-service
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: PGDATABASE
+              value: url_platform
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+              
       containers:
         - name: url-service
           image: url-service:dev
@@ -41,6 +65,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: url-service-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: DATABASE_URL
           readinessProbe:
             httpGet:
               path: /ready
