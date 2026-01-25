@@ -5,6 +5,7 @@ import { loadConfig } from "./config.js";
 import type { UrlStore } from "./storage.js";
 import { MemoryUrlStore } from "./storage_memory.js";
 import { PostgresUrlStore } from "./storage_postgres.js";
+import { validateHttpUrl } from "./validate_url.js";
 
 const config = loadConfig();
 
@@ -91,15 +92,9 @@ app.post(
     const body = req.body as { long_url: string };
     const longUrl = body.long_url;
 
-    // Basic URL validation (avoid javascript: etc.)
-    let parsed: URL;
-    try {
-      parsed = new URL(longUrl);
-      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-        return reply.code(400).send({ error: "long_url must be http/https" });
-      }
-    } catch {
-      return reply.code(400).send({ error: "long_url must be a valid URL" });
+    const res = validateHttpUrl(longUrl);
+    if (!res.ok) {
+      return reply.code(400).send({ error: res.error });
     }
 
     const rec = await store.create(longUrl);
