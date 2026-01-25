@@ -34,9 +34,15 @@ spec:
             - name: POSTGRES_DB
               value: url_platform
             - name: POSTGRES_USER
-              value: url_platform
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
-              value: url_platform
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
