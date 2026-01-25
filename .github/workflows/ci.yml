@@ -81,6 +81,7 @@ jobs:
         with:
           go-version-file: services/redirect-service/go.mod
           cache: true
+          cache-dependency-path: services/redirect-service/go.sum
 
       - name: Unit tests
         run: go test ./...
