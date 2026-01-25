@@ -1,0 +1,102 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: url-service-config
+  namespace: url-platform
+data:
+  PORT: "3000"
+  HOST: "0.0.0.0"
+  STORAGE_MODE: "postgres"
+  LOG_LEVEL: "info"
+  BODY_LIMIT_BYTES: "1048576"
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_MAX: "50"
+  RATE_LIMIT_TIME_WINDOW_MS: "60000"
+  # In Kubernetes we expose url-service via port-forward/ingress later.
+  # Keep BASE_URL aligned with how you'll access it locally for now.
+  BASE_URL: "http://localhost:3000"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: url-service
+  namespace: url-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: url-service
+  template:
+    metadata:
+      labels:
+        app: url-service
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: PGDATABASE
+              value: url_platform
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+              
+      containers:
+        - name: url-service
+          image: url-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: url-service-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: DATABASE_URL
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: url-service
+  namespace: url-platform
+spec:
+  selector:
+    app: url-service
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
