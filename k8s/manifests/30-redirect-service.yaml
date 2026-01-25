@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redirect-service-config
+  namespace: url-platform
+data:
+  PORT: "8080"
+  HOST: "0.0.0.0"
+  LOG_JSON: "true"
+  URL_SERVICE_BASE_URL: "http://url-service:3000"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redirect-service
+  namespace: url-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redirect-service
+  template:
+    metadata:
+      labels:
+        app: redirect-service
+    spec:
+      containers:
+        - name: redirect-service
+          image: redirect-service:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: redirect-service-config
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redirect-service
+  namespace: url-platform
+spec:
+  selector:
+    app: redirect-service
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
