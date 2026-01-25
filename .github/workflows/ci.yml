@@ -23,6 +23,7 @@ jobs:
       shared: ${{ steps.filter.outputs.shared }}
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@v4
       - id: filter
         name: Detect changed paths
         # dorny/paths-filter v3.0.2 pinned to commit SHA
