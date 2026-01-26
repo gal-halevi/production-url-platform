@@ -97,7 +97,8 @@ jobs:
 
       - name: Smoke test through ingress
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          trap 'echo "❌ failed at line $LINENO: $BASH_COMMAND"' ERR
 
           base="http://localhost:${INGRESS_PORT}"
 
