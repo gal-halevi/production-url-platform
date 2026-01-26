@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redirect-service-config
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.redirectService.port | quote }}
+  HOST: {{ .Values.redirectService.host | quote }}
+  LOG_JSON: {{ ternary "true" "false" .Values.redirectService.logJson | quote }}
+  URL_SERVICE_BASE_URL: {{ .Values.redirectService.urlServiceBaseUrl | quote }}
+  ANALYTICS_BASE_URL: {{ .Values.redirectService.analyticsBaseUrl | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redirect-service
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas.redirectService }}
+  selector:
+    matchLabels:
+      app: redirect-service
+  template:
+    metadata:
+      labels:
+        app: redirect-service
+        {{- include "url-platform.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: redirect-service
+          image: "{{ .Values.images.redirectService.repository }}:{{ .Values.images.redirectService.tag }}"
+          imagePullPolicy: {{ .Values.images.redirectService.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.redirectService.port }}
+          envFrom:
+            - configMapRef:
+                name: redirect-service-config
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.redirectService.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.redirectService.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redirect-service
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: redirect-service
+  ports:
+    - name: http
+      port: {{ .Values.redirectService.port }}
+      targetPort: {{ .Values.redirectService.port }}

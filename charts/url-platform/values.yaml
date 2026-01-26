@@ -1,0 +1,65 @@
+namespace: url-platform
+
+images:
+  urlService:
+    repository: url-service
+    tag: dev
+    pullPolicy: IfNotPresent
+  redirectService:
+    repository: redirect-service
+    tag: dev
+    pullPolicy: IfNotPresent
+  analyticsService:
+    repository: analytics-service
+    tag: dev
+    pullPolicy: IfNotPresent
+  postgres:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+
+postgres:
+  db: url_platform
+  pvc:
+    size: 1Gi
+
+urlService:
+  port: 3000
+  host: 0.0.0.0
+  storageMode: postgres
+  logLevel: info
+  bodyLimitBytes: 1048576
+  rateLimitEnabled: true
+  rateLimitMax: 50
+  rateLimitTimeWindowMs: 60000
+  baseUrl: http://localhost:30000
+  databaseUrlSecret:
+    name: postgres-secret
+    key: DATABASE_URL
+  waitForPostgres: true
+
+redirectService:
+  port: 8080
+  host: 0.0.0.0
+  logJson: true
+  urlServiceBaseUrl: http://url-service:3000
+  analyticsBaseUrl: http://analytics-service:8000
+
+analyticsService:
+  port: 8000
+  logLevel: info
+
+ingress:
+  enabled: true
+  className: nginx
+  nodePortHttp: 30000
+  paths:
+    redirectPrefix: /r
+    statsPrefix: /stats
+    rootPrefix: /
+
+replicas:
+  postgres: 1
+  urlService: 1
+  redirectService: 1
+  analyticsService: 1
