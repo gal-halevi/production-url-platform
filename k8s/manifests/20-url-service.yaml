@@ -14,7 +14,7 @@ data:
   RATE_LIMIT_TIME_WINDOW_MS: "60000"
   # In Kubernetes we expose url-service via port-forward/ingress later.
   # Keep BASE_URL aligned with how you'll access it locally for now.
-  BASE_URL: "http://localhost:3000"
+  BASE_URL: "http://localhost:30000"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -55,7 +55,7 @@ spec:
                 echo "waiting for postgres..."
                 sleep 2
               done
-              
+
       containers:
         - name: url-service
           image: url-service:dev
