@@ -39,6 +39,7 @@ jobs:
         uses: helm/kind-action@v1.10.0
         with:
           cluster_name: url-platform
+          config: k8s/kind-config.yaml
 
       - name: Install ingress-nginx (kind provider)
         run: |
