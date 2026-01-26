@@ -53,6 +53,12 @@ ingress:
   enabled: true
   className: nginx
   nodePortHttp: 30000
+  annotations: {}
+  hosts:
+    enabled: true
+    api: api.url-platform.local
+    redirect: r.url-platform.local
+    analytics: analytics.url-platform.local
   paths:
     redirectPrefix: /r
     statsPrefix: /stats
