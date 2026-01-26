@@ -22,7 +22,7 @@ metadata:
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicas.urlService }}
+  replicas: {{ .Values.replicaCount.urlService }}
   selector:
     matchLabels:
       app: url-service
@@ -74,6 +74,8 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
                   key: {{ .Values.urlService.databaseUrlSecret.key | quote }}
+          resources:
+            {{- toYaml .Values.resources.urlService | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /ready

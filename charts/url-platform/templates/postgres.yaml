@@ -18,7 +18,7 @@ metadata:
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicas.postgres }}
+  replicas: {{ .Values.replicaCount.postgres }}
   selector:
     matchLabels:
       app: postgres
@@ -47,6 +47,8 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
                   key: POSTGRES_PASSWORD
+          resources:
+            {{- toYaml .Values.resources.postgres | nindent 12 }}
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
