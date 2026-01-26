@@ -1,0 +1,150 @@
+name: kind-helm-e2e
+
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - "k8s/**"
+      - "services/**"
+      - ".github/workflows/kind-helm-e2e.yml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "k8s/**"
+      - "services/**"
+      - ".github/workflows/kind-helm-e2e.yml"
+
+jobs:
+  helm-kind-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      NAMESPACE: url-platform
+      RELEASE_NAME: url-platform
+      INGRESS_PORT: "30000"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: url-platform
+
+      - name: Install ingress-nginx (kind provider)
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+          kubectl -n ingress-nginx wait --for=condition=ready pod -l app.kubernetes.io/component=controller --timeout=180s
+
+      - name: Build service images
+        run: |
+          docker build -t url-service:dev services/url-service
+          docker build -t redirect-service:dev services/redirect-service
+          docker build -t analytics-service:dev services/analytics-service
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image url-service:dev --name url-platform
+          kind load docker-image redirect-service:dev --name url-platform
+          kind load docker-image analytics-service:dev --name url-platform
+
+      - name: Create namespace
+        run: |
+          kubectl create namespace "$NAMESPACE"
+
+      - name: Apply postgres secret
+        env:
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          cat > /tmp/postgres-secret.yaml <<EOF
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: postgres-secret
+            namespace: ${NAMESPACE}
+          type: Opaque
+          stringData:
+            POSTGRES_USER: "${POSTGRES_USER}"
+            POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+            DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/url_platform"
+          EOF
+          kubectl apply -f /tmp/postgres-secret.yaml
+
+      - name: Deploy via Helm
+        run: |
+          helm lint charts/url-platform
+          helm upgrade --install "$RELEASE_NAME" charts/url-platform -n "$NAMESPACE"
+
+      - name: Wait for workloads
+        run: |
+          kubectl -n "$NAMESPACE" rollout status deploy/postgres --timeout=180s
+          kubectl -n "$NAMESPACE" rollout status deploy/url-service --timeout=180s
+          kubectl -n "$NAMESPACE" rollout status deploy/redirect-service --timeout=180s
+          kubectl -n "$NAMESPACE" rollout status deploy/analytics-service --timeout=180s
+          kubectl -n "$NAMESPACE" get pods -o wide
+          kubectl -n "$NAMESPACE" get ingress
+
+      - name: Smoke test through ingress
+        run: |
+          set -euo pipefail
+
+          base="http://localhost:${INGRESS_PORT}"
+
+          # health
+          curl -fsS "${base}/health" >/dev/null
+
+          # create URL
+          resp="$(curl -fsS -X POST "${base}/urls" -H 'content-type: application/json' -d '{"long_url":"https://example.com"}')"
+          echo "$resp"
+          code="$(python3 - <<'PY'
+          import json,sys
+          print(json.loads(sys.stdin.read())["code"])
+          PY
+          <<<"$resp")"
+          echo "code=$code"
+
+          # redirect should 302 to example.com
+          loc="$(curl -sSI "${base}/r/${code}" | awk -F': ' 'tolower($1)=="location"{print $2}' | tr -d '\r')"
+          echo "location=$loc"
+          test "$loc" = "https://example.com"
+
+          # hit redirect a couple times
+          curl -fsS -o /dev/null "${base}/r/${code}"
+          curl -fsS -o /dev/null "${base}/r/${code}"
+
+          # stats should exist and count >= 1
+          stats="$(curl -fsS "${base}/stats/${code}")"
+          echo "$stats"
+          python3 - <<'PY'
+          import json,sys
+          d=json.loads(sys.stdin.read())
+          assert d["code"]
+          assert d["count"] >= 1
+          PY
+          <<<"$stats"
+
+      - name: Debug (on failure)
+        if: failure()
+        run: |
+          echo "==== pods ===="
+          kubectl -n "$NAMESPACE" get pods -o wide || true
+          echo "==== ingress ===="
+          kubectl -n "$NAMESPACE" describe ingress url-platform || true
+          echo "==== url-service logs ===="
+          kubectl -n "$NAMESPACE" logs deploy/url-service --tail=200 || true
+          echo "==== redirect-service logs ===="
+          kubectl -n "$NAMESPACE" logs deploy/redirect-service --tail=200 || true
+          echo "==== analytics-service logs ===="
+          kubectl -n "$NAMESPACE" logs deploy/analytics-service --tail=200 || true
+          echo "==== postgres logs ===="
+          kubectl -n "$NAMESPACE" logs deploy/postgres --tail=200 || true
