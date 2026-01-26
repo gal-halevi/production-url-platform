@@ -46,7 +46,27 @@ docker build -t analytics-service:dev services/analytics-service
 kind load docker-image analytics-service:dev --name url-platform
 ```
 
-## Next steps
-- Add Kubernetes manifests for postgres + services (Deployments/Services)
-- Wire configuration via ConfigMaps/Secrets
-- Add port-forward commands for local testing
+## Ingress (NGINX) 🌐
+
+This project uses **ingress-nginx** as the Kubernetes ingress controller for local development with kind.
+
+Ingress resources in this repository require an ingress controller to be installed in the cluster. The controller is a cluster-level dependency and is not versioned in this repository.
+
+### Install ingress-nginx (once per cluster)
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
+```
+
+Wait until the controller is ready:
+
+```bash
+kubectl -n ingress-nginx get pods
+```
+
+### Traffic flow
+
+The ingress controller exposes HTTP traffic on NodePort **30000**.
+
+Ingress rules defined under `k8s/manifests/` route incoming traffic to the appropriate services based on URL paths.
+
