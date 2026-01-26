@@ -69,8 +69,38 @@ ingress:
     statsPrefix: /stats
     rootPrefix: /
 
-replicas:
-  postgres: 1
+replicaCount:
   urlService: 1
   redirectService: 1
   analyticsService: 1
+  postgres: 1
+
+resources:
+  urlService:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  redirectService:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+  analyticsService:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  postgres:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

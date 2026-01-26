@@ -18,7 +18,7 @@ metadata:
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicas.redirectService }}
+  replicas: {{ .Values.replicaCount.redirectService }}
   selector:
     matchLabels:
       app: redirect-service
@@ -37,6 +37,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: redirect-service-config
+          resources:
+            {{- toYaml .Values.resources.redirectService | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /ready
