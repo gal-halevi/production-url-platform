@@ -15,7 +15,7 @@ metadata:
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicas.analyticsService }}
+  replicas: {{ .Values.replicaCount.analyticsService }}
   selector:
     matchLabels:
       app: analytics-service
@@ -34,6 +34,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: analytics-service-config
+          resources:
+            {{- toYaml .Values.resources.analyticsService | nindent 12 }}
           readinessProbe:
             httpGet:
               path: /health
