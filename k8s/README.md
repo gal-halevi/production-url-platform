@@ -70,3 +70,32 @@ The ingress controller exposes HTTP traffic on NodePort **30000**.
 
 Ingress rules defined under `k8s/manifests/` route incoming traffic to the appropriate services based on URL paths.
 
+## Helm-based deployment
+
+While raw Kubernetes manifests are kept under `k8s/manifests/` for reference and learning purposes,
+the recommended way to deploy the platform locally is via **Helm**.
+
+The Helm chart packages all services (postgres, url-service, redirect-service, analytics-service)
+along with ingress routing and runtime configuration.
+
+### Deploy using Helm
+
+- Ensure ingress-nginx is installed (see section above)
+- Create the namespace:
+  ```bash
+  kubectl create namespace url-platform
+  ```
+- Apply local secrets:
+  ```bash
+  kubectl apply -f k8s/manifests/05-secrets.yaml
+  ```
+- Install or upgrade the chart:
+  ```bash
+  helm upgrade --install url-platform charts/url-platform -n url-platform
+  ```
+
+After installation, the platform is accessible through the ingress entry point
+(NodePort 30000 by default), using path-based routing:
+- `/` → url-service
+- `/r` → redirect-service
+- `/stats` → analytics-service
