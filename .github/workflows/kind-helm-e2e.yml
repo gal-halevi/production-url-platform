@@ -102,6 +102,18 @@ jobs:
 
           base="http://localhost:${INGRESS_PORT}"
 
+          # Wait for ingress to be ready (avoids 503 during backend sync)
+          echo "Waiting for ingress to become ready..."
+          for i in $(seq 1 30); do
+            http_code="$(curl -fsS --max-time 5 -w "%{http_code}" -o /dev/null "${base}/health")"
+            if [[ "$http_code" == "200" ]]; then
+              echo "Ingress ready after $i attempts (HTTP $http_code)"
+              break
+            fi
+            echo "Attempt $i: HTTP $http_code, retrying in 2s..."
+            sleep 2
+          done
+
           # health
           curl -fsS "${base}/health" >/dev/null
 
