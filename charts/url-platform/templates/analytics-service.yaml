@@ -1,0 +1,62 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: analytics-service-config
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.analyticsService.port | quote }}
+  LOG_LEVEL: {{ .Values.analyticsService.logLevel | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas.analyticsService }}
+  selector:
+    matchLabels:
+      app: analytics-service
+  template:
+    metadata:
+      labels:
+        app: analytics-service
+        {{- include "url-platform.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: analytics-service
+          image: "{{ .Values.images.analyticsService.repository }}:{{ .Values.images.analyticsService.tag }}"
+          imagePullPolicy: {{ .Values.images.analyticsService.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.analyticsService.port }}
+          envFrom:
+            - configMapRef:
+                name: analytics-service-config
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.analyticsService.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.analyticsService.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: analytics-service
+  ports:
+    - name: http
+      port: {{ .Values.analyticsService.port }}
+      targetPort: {{ .Values.analyticsService.port }}

@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: url-service-config
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.urlService.port | quote }}
+  HOST: {{ .Values.urlService.host | quote }}
+  STORAGE_MODE: {{ .Values.urlService.storageMode | quote }}
+  LOG_LEVEL: {{ .Values.urlService.logLevel | quote }}
+  BODY_LIMIT_BYTES: {{ .Values.urlService.bodyLimitBytes | quote }}
+  RATE_LIMIT_ENABLED: {{ ternary "true" "false" .Values.urlService.rateLimitEnabled | quote }}
+  RATE_LIMIT_MAX: {{ .Values.urlService.rateLimitMax | quote }}
+  RATE_LIMIT_TIME_WINDOW_MS: {{ .Values.urlService.rateLimitTimeWindowMs | quote }}
+  BASE_URL: {{ .Values.urlService.baseUrl | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: url-service
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicas.urlService }}
+  selector:
+    matchLabels:
+      app: url-service
+  template:
+    metadata:
+      labels:
+        app: url-service
+        {{- include "url-platform.labels" . | nindent 8 }}
+    spec:
+      {{- if .Values.urlService.waitForPostgres }}
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.images.postgres.repository }}:{{ .Values.images.postgres.tag }}"
+          imagePullPolicy: {{ .Values.images.postgres.pullPolicy }}
+          env:
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
+                  key: POSTGRES_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
+                  key: POSTGRES_PASSWORD
+            - name: PGDATABASE
+              value: {{ .Values.postgres.db | quote }}
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+      {{- end }}
+      containers:
+        - name: url-service
+          image: "{{ .Values.images.urlService.repository }}:{{ .Values.images.urlService.tag }}"
+          imagePullPolicy: {{ .Values.images.urlService.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.urlService.port }}
+          envFrom:
+            - configMapRef:
+                name: url-service-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
+                  key: {{ .Values.urlService.databaseUrlSecret.key | quote }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: {{ .Values.urlService.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.urlService.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: url-service
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: url-service
+  ports:
+    - name: http
+      port: {{ .Values.urlService.port }}
+      targetPort: {{ .Values.urlService.port }}
