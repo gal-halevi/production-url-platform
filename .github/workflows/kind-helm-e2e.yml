@@ -121,11 +121,7 @@ jobs:
           # create URL
           resp="$(curl -fsS -X POST "${base}/urls" -H 'content-type: application/json' -d '{"long_url":"https://example.com"}')"
           echo "$resp"
-          code="$(python3 - <<'PY'
-          import json,sys
-          print(json.loads(sys.stdin.read())["code"])
-          PY
-          <<<"$resp")"
+          code="$(printf '%s' "$resp" | python3 -c 'import json,sys; print(json.load(sys.stdin)["code"])')"
           echo "code=$code"
 
           # redirect should 302 to example.com
@@ -140,13 +136,12 @@ jobs:
           # stats should exist and count >= 1
           stats="$(curl -fsS "${base}/stats/${code}")"
           echo "$stats"
-          python3 - <<'PY'
+          printf '%s' "$stats" | python3 -c '
           import json,sys
-          d=json.loads(sys.stdin.read())
+          d = json.load(sys.stdin)
           assert d["code"]
           assert d["count"] >= 1
-          PY
-          <<<"$stats"
+          '
 
       - name: Debug (on failure)
         if: failure()
