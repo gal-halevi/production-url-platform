@@ -5,9 +5,14 @@ metadata:
   name: url-platform
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className | quote }}
   rules:
+    # Path-based routing (default)
     - http:
         paths:
           - path: {{ .Values.ingress.paths.redirectPrefix | quote }}
@@ -31,4 +36,40 @@ spec:
                 name: url-service
                 port:
                   number: {{ .Values.urlService.port }}
+
+    {{- if .Values.ingress.hosts.enabled }}
+    # Host-based routing (optional)
+    - host: {{ .Values.ingress.hosts.redirect | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: redirect-service
+                port:
+                  number: {{ .Values.redirectService.port }}
+
+    - host: {{ .Values.ingress.hosts.analytics | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: analytics-service
+                port:
+                  number: {{ .Values.analyticsService.port }}
+
+    - host: {{ .Values.ingress.hosts.api | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: url-service
+                port:
+                  number: {{ .Values.urlService.port }}
+    {{- end }}
 {{- end }}
