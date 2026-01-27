@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      url: ${{ steps.filter.outputs.url }}
+      redirect: ${{ steps.filter.outputs.redirect }}
+      analytics: ${{ steps.filter.outputs.analytics }}
+      any_service: ${{ steps.filter.outputs.any_service }}
+      charts_or_k8s: ${{ steps.filter.outputs.charts_or_k8s }}
+      compose_affecting: ${{ steps.filter.outputs.compose_affecting }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36
+        with:
+          filters: |
+            url:
+              - 'services/url-service/**'
+            redirect:
+              - 'services/redirect-service/**'
+            analytics:
+              - 'services/analytics-service/**'
+            any_service:
+              - 'services/**'
+            charts_or_k8s:
+              - 'charts/**'
+              - 'k8s/**'
+            compose_affecting:
+              - 'docker-compose.yml'
+              - 'scripts/e2e-smoke.sh'
+
+  unit-url-service:
+    needs: changes
+    if: ${{ needs.changes.outputs.url == 'true' }}
+    uses: ./.github/workflows/_unit-url-service.yml
+
+  unit-redirect-service:
+    needs: changes
+    if: ${{ needs.changes.outputs.redirect == 'true' }}
+    uses: ./.github/workflows/_unit-redirect-service.yml
+
+  unit-analytics-service:
+    needs: changes
+    if: ${{ needs.changes.outputs.analytics == 'true' }}
+    uses: ./.github/workflows/_unit-analytics-service.yml
+
+  compose-e2e:
+    needs:
+      - changes
+      - unit-url-service
+      - unit-redirect-service
+      - unit-analytics-service
+    if: ${{ needs.changes.outputs.any_service == 'true' || needs.changes.outputs.compose_affecting == 'true' }}
+    uses: ./.github/workflows/_compose-e2e.yml
+
+  kind-helm-e2e:
+    needs:
+      - changes
+      - compose-e2e
+    if: ${{ needs.changes.outputs.any_service == 'true' || needs.changes.outputs.charts_or_k8s == 'true' }}
+    uses: ./.github/workflows/_kind-helm-e2e.yml
+    secrets:
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
