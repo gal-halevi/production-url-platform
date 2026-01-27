@@ -1,5 +1,12 @@
 name: kind-helm-e2e
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     paths:
@@ -158,3 +165,30 @@ jobs:
           kubectl -n "$NAMESPACE" logs deploy/analytics-service --tail=200 || true
           echo "==== postgres logs ===="
           kubectl -n "$NAMESPACE" logs deploy/postgres --tail=200 || true
+          echo "==== endpoints ===="
+          kubectl -n "$NAMESPACE" get endpoints || true
+          echo "==== ingress-nginx controller svc ===="
+          kubectl -n ingress-nginx get svc ingress-nginx-controller -o wide || true
+          echo "==== ingress-nginx controller logs ===="
+          kubectl -n ingress-nginx logs deploy/ingress-nginx-controller --tail=200 || true
+          echo "==== helm status ===="
+          helm -n "$NAMESPACE" status "$RELEASE_NAME" || true
+          echo "==== helm manifest (tail) ===="
+          helm -n "$NAMESPACE" get manifest "$RELEASE_NAME" | tail -n 200 || true
+      - name: Save k8s debug artifacts
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          kubectl -n "$NAMESPACE" get all -o wide > artifacts/get-all.txt || true
+          kubectl -n "$NAMESPACE" describe ingress url-platform > artifacts/ingress.txt || true
+          kubectl -n "$NAMESPACE" get endpoints > artifacts/endpoints.txt || true
+          kubectl -n ingress-nginx logs deploy/ingress-nginx-controller --tail=500 > artifacts/ingress-nginx.log || true
+          helm -n "$NAMESPACE" status "$RELEASE_NAME" > artifacts/helm-status.txt || true
+
+      - name: Upload k8s debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind-helm-e2e-debug
+          path: artifacts/
+          if-no-files-found: error
