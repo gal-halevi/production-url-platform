@@ -6,6 +6,7 @@ import type { UrlStore } from "./storage.js";
 import { MemoryUrlStore } from "./storage_memory.js";
 import { PostgresUrlStore } from "./storage_postgres.js";
 import { validateHttpUrl } from "./validate_url.js";
+import { getOrCreateRequestId } from "./request_id.js";
 
 const config = loadConfig();
 
@@ -23,7 +24,11 @@ const app = Fastify({
     level: config.logLevel
   },
   bodyLimit: config.bodyLimitBytes,
-  trustProxy: true
+  trustProxy: true,
+  genReqId: (req) => {
+    // req.headers is IncomingMessage headers type
+    return getOrCreateRequestId(req.headers as any);
+  }
 });
 
 await app.register(helmet, {
@@ -37,6 +42,10 @@ if (config.rateLimitEnabled) {
     timeWindow: config.rateLimitTimeWindowMs
   });
 }
+
+app.addHook("onSend", async (req, reply) => {
+  reply.header("X-Request-Id", req.id);
+});
 
 app.get("/health", async () => {
   return { status: "ok", service: "url-service" };
