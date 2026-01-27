@@ -64,14 +64,26 @@ jobs:
       - unit-url-service
       - unit-redirect-service
       - unit-analytics-service
-    if: ${{ needs.changes.outputs.any_service == 'true' || needs.changes.outputs.compose_affecting == 'true' }}
+    # Conditions for running compose e2e tests:
+    # 1. No unit test jobs failed (!failure)
+    # 2. No unit test jobs were cancelled (!cancelled)
+    # 3. Either: any service changed OR compose files changed
+    # Note: Unit test jobs may be skipped if their service didn't change - that's OK
+    if: |
+      !failure() && !cancelled() &&
+      (needs.changes.outputs.any_service == 'true' || needs.changes.outputs.compose_affecting == 'true')
     uses: ./.github/workflows/_compose-e2e.yml
 
   kind-helm-e2e:
     needs:
       - changes
       - compose-e2e
-    if: ${{ needs.changes.outputs.any_service == 'true' || needs.changes.outputs.charts_or_k8s == 'true' }}
+    # Run kind-helm e2e tests if relevant files changed AND compose-e2e didn't fail.
+    # Compose-e2e may be skipped (e.g., only k8s/charts changed) - that's OK.
+    # We only block if compose-e2e actually failed or was cancelled.
+    if: |
+      !failure() && !cancelled() &&
+      (needs.changes.outputs.any_service == 'true' || needs.changes.outputs.charts_or_k8s == 'true')
     uses: ./.github/workflows/_kind-helm-e2e.yml
     secrets:
       POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
