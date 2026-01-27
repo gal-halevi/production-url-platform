@@ -85,6 +85,8 @@ jobs:
     with:
       image_name: url-service
       context: services/url-service
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   publish-redirect-service:
     needs: [changes, kind-helm-e2e]
@@ -93,6 +95,8 @@ jobs:
     with:
       image_name: redirect-service
       context: services/redirect-service
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   publish-analytics-service:
     needs: [changes, kind-helm-e2e]
@@ -101,3 +105,5 @@ jobs:
     with:
       image_name: analytics-service
       context: services/analytics-service
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
