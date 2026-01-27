@@ -1,26 +1,27 @@
 import { describe, it, expect } from "vitest";
 import Fastify from "fastify";
-import { REQUEST_ID_HEADER, getOrCreateRequestId } from "../../src/request_id.js";
+import { getOrCreateRequestId } from "../../src/request_id.js";
 
 describe("request id", () => {
   it("getOrCreateRequestId uses incoming header when present", () => {
-    const req = { headers: { [REQUEST_ID_HEADER]: "demo-123" } } as any;
-    expect(getOrCreateRequestId(req)).toBe("demo-123");
+    const id = getOrCreateRequestId({ "x-request-id": "demo-123" } as any);
+    expect(id).toBe("demo-123");
   });
 
   it("getOrCreateRequestId generates when missing", () => {
-    const req = { headers: {} } as any;
-    const id = getOrCreateRequestId(req);
+    const id = getOrCreateRequestId({} as any);
     expect(id).toBeTruthy();
     expect(String(id).length).toBeGreaterThan(0);
   });
 
   it("echoes X-Request-Id when provided", async () => {
-    const app = Fastify({ logger: false });
+    const app = Fastify({
+      logger: false,
+      genReqId: (req) => getOrCreateRequestId(req.headers as any)
+    });
 
-    app.addHook("onRequest", async (req, reply) => {
-      const requestId = getOrCreateRequestId(req as any);
-      reply.header("X-Request-Id", requestId);
+    app.addHook("onSend", async (req, reply) => {
+      reply.header("X-Request-Id", req.id);
     });
 
     app.get("/health", async () => ({ ok: true }));
@@ -36,11 +37,13 @@ describe("request id", () => {
   });
 
   it("generates X-Request-Id when missing", async () => {
-    const app = Fastify({ logger: false });
+    const app = Fastify({
+      logger: false,
+      genReqId: (req) => getOrCreateRequestId(req.headers as any)
+    });
 
-    app.addHook("onRequest", async (req, reply) => {
-      const requestId = getOrCreateRequestId(req as any);
-      reply.header("X-Request-Id", requestId);
+    app.addHook("onSend", async (req, reply) => {
+      reply.header("X-Request-Id", req.id);
     });
 
     app.get("/health", async () => ({ ok: true }));

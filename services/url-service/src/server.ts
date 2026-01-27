@@ -6,7 +6,7 @@ import type { UrlStore } from "./storage.js";
 import { MemoryUrlStore } from "./storage_memory.js";
 import { PostgresUrlStore } from "./storage_postgres.js";
 import { validateHttpUrl } from "./validate_url.js";
-import { REQUEST_ID_HEADER, getOrCreateRequestId } from "./request_id.js";
+import { getOrCreateRequestId } from "./request_id.js";
 
 const config = loadConfig();
 
@@ -24,7 +24,11 @@ const app = Fastify({
     level: config.logLevel
   },
   bodyLimit: config.bodyLimitBytes,
-  trustProxy: true
+  trustProxy: true,
+  genReqId: (req) => {
+    // req.headers is IncomingMessage headers type
+    return getOrCreateRequestId(req.headers as any);
+  }
 });
 
 await app.register(helmet, {
@@ -39,31 +43,8 @@ if (config.rateLimitEnabled) {
   });
 }
 
-app.addHook("onRequest", async (req, reply) => {
-  const requestId = getOrCreateRequestId(req);
-
-  // attach to request for later usage
-  (req as any).requestId = requestId;
-
-  // echo header back to the client
-  reply.header("X-Request-Id", requestId);
-
-  // helpful for proxied setups
-  reply.header("X-Content-Type-Options", "nosniff");
-});
-
-app.addHook("onResponse", async (req, reply) => {
-  // include request id in log line
-  const requestId = (req as any).requestId;
-  req.log.info(
-    {
-      request_id: requestId,
-      method: req.method,
-      path: req.url,
-      status: reply.statusCode
-    },
-    "request completed"
-  );
+app.addHook("onSend", async (req, reply) => {
+  reply.header("X-Request-Id", req.id);
 });
 
 app.get("/health", async () => {

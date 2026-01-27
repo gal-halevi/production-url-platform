@@ -1,15 +1,8 @@
-import type { FastifyRequest } from "fastify";
 import { randomUUID } from "crypto";
 
 export const REQUEST_ID_HEADER = "x-request-id";
 
-/**
- * Get incoming X-Request-Id if present, otherwise generate a new one.
- * Keep it simple: trim, enforce a sane length, and avoid empty values.
- */
-export function getOrCreateRequestId(req: FastifyRequest): string {
-  const raw = req.headers[REQUEST_ID_HEADER];
-
+export function normalizeRequestId(raw: unknown): string | undefined {
   const incoming =
     typeof raw === "string"
       ? raw
@@ -18,9 +11,11 @@ export function getOrCreateRequestId(req: FastifyRequest): string {
         : undefined;
 
   const trimmed = (incoming ?? "").trim();
-  if (trimmed.length > 0 && trimmed.length <= 128) {
-    return trimmed;
-  }
+  if (trimmed.length > 0 && trimmed.length <= 128) return trimmed;
+  return undefined;
+}
 
-  return randomUUID();
+export function getOrCreateRequestId(headers: Record<string, unknown>): string {
+  const existing = normalizeRequestId(headers[REQUEST_ID_HEADER]);
+  return existing ?? randomUUID();
 }
