@@ -1,11 +1,12 @@
-name: ci
+name: main-validate-publish
 
 on:
-  pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
-  pull-requests: read
+  packages: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -76,3 +77,27 @@ jobs:
     secrets:
       POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+
+  publish-url-service:
+    needs: [changes, kind-helm-e2e]
+    if: ${{ needs.changes.outputs.url == 'true' }}
+    uses: ./.github/workflows/_publish-one-image.yml
+    with:
+      image_name: url-service
+      context: services/url-service
+
+  publish-redirect-service:
+    needs: [changes, kind-helm-e2e]
+    if: ${{ needs.changes.outputs.redirect == 'true' }}
+    uses: ./.github/workflows/_publish-one-image.yml
+    with:
+      image_name: redirect-service
+      context: services/redirect-service
+
+  publish-analytics-service:
+    needs: [changes, kind-helm-e2e]
+    if: ${{ needs.changes.outputs.analytics == 'true' }}
+    uses: ./.github/workflows/_publish-one-image.yml
+    with:
+      image_name: analytics-service
+      context: services/analytics-service
