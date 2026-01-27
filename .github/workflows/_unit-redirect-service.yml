@@ -1,0 +1,20 @@
+name: _unit-redirect-service
+
+on:
+  workflow_call: {}
+
+jobs:
+  unit-redirect-service:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/redirect-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: services/redirect-service/go.mod
+          cache: true
+          cache-dependency-path: services/redirect-service/go.sum
+      - run: go test ./...
