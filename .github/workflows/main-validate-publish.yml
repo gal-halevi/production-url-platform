@@ -92,7 +92,9 @@ jobs:
 
   publish-url-service:
     needs: [changes, kind-helm-e2e]
-    if: ${{ needs.changes.outputs.url == 'true' }}
+    if: |
+      !failure() && !cancelled() &&
+      needs.changes.outputs.url == 'true'
     uses: ./.github/workflows/_publish-one-image.yml
     with:
       image_name: url-service
@@ -102,7 +104,9 @@ jobs:
 
   publish-redirect-service:
     needs: [changes, kind-helm-e2e]
-    if: ${{ needs.changes.outputs.redirect == 'true' }}
+    if: |
+      !failure() && !cancelled() &&
+      needs.changes.outputs.redirect == 'true'
     uses: ./.github/workflows/_publish-one-image.yml
     with:
       image_name: redirect-service
@@ -112,7 +116,9 @@ jobs:
 
   publish-analytics-service:
     needs: [changes, kind-helm-e2e]
-    if: ${{ needs.changes.outputs.analytics == 'true' }}
+    if: |
+      !failure() && !cancelled() &&
+      needs.changes.outputs.analytics == 'true'
     uses: ./.github/workflows/_publish-one-image.yml
     with:
       image_name: analytics-service
