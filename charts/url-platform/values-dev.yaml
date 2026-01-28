@@ -1,0 +1,35 @@
+images:
+  urlService:
+    repository: url-service
+    tag: dev
+    pullPolicy: IfNotPresent
+  redirectService:
+    repository: redirect-service
+    tag: dev
+    pullPolicy: IfNotPresent
+  analyticsService:
+    repository: analytics-service
+    tag: dev
+    pullPolicy: IfNotPresent
+  postgres:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+
+replicaCount:
+  urlService: 1
+  redirectService: 1
+  analyticsService: 1
+  postgres: 1
+
+ingress:
+  enabled: true
+  className: nginx
+  nodePortHttp: 30000
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  hosts:
+    enabled: true
+    api: api.dev.url-platform.local
+    redirect: r.dev.url-platform.local
+    analytics: analytics.dev.url-platform.local
