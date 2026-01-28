@@ -12,6 +12,12 @@ func TestResolveLongURL_OK(t *testing.T) {
 		if r.URL.Path != "/urls/abc" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
+
+		// Verify request-id propagation
+		if got := r.Header.Get("X-Request-Id"); got != "req-123" {
+			t.Fatalf("expected X-Request-Id=req-123, got %q", got)
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(200)
 		_, _ = w.Write([]byte(`{"code":"abc","long_url":"https://example.com"}`))
@@ -19,7 +25,7 @@ func TestResolveLongURL_OK(t *testing.T) {
 	defer ts.Close()
 
 	c := &http.Client{Timeout: 2 * time.Second}
-	u, status, err := resolveLongURL(c, ts.URL, "abc")
+	u, status, err := resolveLongURL(c, ts.URL, "abc", "req-123")
 	if err != nil {
 		t.Fatalf("expected nil err, got %v", err)
 	}
@@ -38,7 +44,7 @@ func TestResolveLongURL_NotFound(t *testing.T) {
 	defer ts.Close()
 
 	c := &http.Client{Timeout: 2 * time.Second}
-	u, status, err := resolveLongURL(c, ts.URL, "missing")
+	u, status, err := resolveLongURL(c, ts.URL, "missing", "req-404")
 	if err != nil {
 		t.Fatalf("expected nil err, got %v", err)
 	}
@@ -59,7 +65,7 @@ func TestResolveLongURL_InvalidScheme(t *testing.T) {
 	defer ts.Close()
 
 	c := &http.Client{Timeout: 2 * time.Second}
-	_, _, err := resolveLongURL(c, ts.URL, "abc")
+	_, _, err := resolveLongURL(c, ts.URL, "abc", "req-bad")
 	if err == nil {
 		t.Fatalf("expected err for invalid scheme")
 	}
