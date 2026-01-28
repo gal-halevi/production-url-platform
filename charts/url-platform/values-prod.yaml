@@ -1,0 +1,34 @@
+images:
+  urlService:
+    repository: ghcr.io/gal-halevi/url-service
+    tag: v0.2.0
+    pullPolicy: IfNotPresent
+  redirectService:
+    repository: ghcr.io/gal-halevi/redirect-service
+    tag: v0.2.0
+    pullPolicy: IfNotPresent
+  analyticsService:
+    repository: ghcr.io/gal-halevi/analytics-service
+    tag: v0.2.0
+    pullPolicy: IfNotPresent
+  postgres:
+    repository: postgres
+    tag: 16-alpine
+    pullPolicy: IfNotPresent
+
+replicaCount:
+  urlService: 3
+  redirectService: 3
+  analyticsService: 2
+  postgres: 1
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    enabled: true
+    api: api.url-platform.example
+    redirect: r.url-platform.example
+    analytics: analytics.url-platform.example
