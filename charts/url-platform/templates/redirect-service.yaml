@@ -9,7 +9,7 @@ data:
   HOST: {{ .Values.redirectService.host | quote }}
   LOG_JSON: {{ ternary "true" "false" .Values.redirectService.logJson | quote }}
   URL_SERVICE_BASE_URL: {{ .Values.redirectService.urlServiceBaseUrl | quote }}
-  ANALYTICS_BASE_URL: {{ .Values.redirectService.analyticsBaseUrl | quote }}
+  ANALYTICS_SERVICE_BASE_URL: {{ .Values.redirectService.analyticsBaseUrl | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment

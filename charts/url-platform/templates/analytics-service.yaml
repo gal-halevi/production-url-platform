@@ -38,7 +38,7 @@ spec:
             {{- toYaml .Values.resources.analyticsService | nindent 12 }}
           readinessProbe:
             httpGet:
-              path: /health
+              path: /ready
               port: {{ .Values.analyticsService.port }}
             initialDelaySeconds: 3
             periodSeconds: 5
