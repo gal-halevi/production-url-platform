@@ -1,0 +1,5 @@
+{
+  "services/url-service": "0.1.0",
+  "services/redirect-service": "0.1.0",
+  "services/analytics-service": "0.1.0"
+}
