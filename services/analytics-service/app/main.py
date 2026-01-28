@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 from collections import Counter
 from typing import Any, Dict, Optional
@@ -22,13 +23,18 @@ def _env_int(name: str, default: int) -> int:
         if v <= 0:
             raise ValueError()
         return v
-    except ValueError:
-        raise RuntimeError(f"Invalid {name}: must be a positive integer")
+    except ValueError as e:
+        raise RuntimeError(f"Invalid {name}: must be a positive integer") from e
 
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
 BODY_LIMIT_BYTES = _env_int("BODY_LIMIT_BYTES", 16 * 1024)  # 16KB
 
+logging.basicConfig(
+    level=logging.INFO,
+    stream=sys.stdout,
+    format="%(levelname)s %(message)s",
+)
 logger = logging.getLogger("analytics-service")
 
 
@@ -53,6 +59,27 @@ def _rid(request: Request) -> str:
 
 
 @app.middleware("http")
+async def request_log(request: Request, call_next):
+    start = time.perf_counter()
+    status: int | str = "n/a"
+
+    try:
+        response = await call_next(request)
+        status = getattr(response, "status_code", "n/a")
+        return response
+    finally:
+        ms = int((time.perf_counter() - start) * 1000)
+        logger.info(
+            "request_id=%s method=%s path=%s status=%s ms=%s",
+            _rid(request),
+            request.method,
+            request.url.path,
+            status,
+            ms,
+        )
+
+
+@app.middleware("http")
 async def limit_body_size(request: Request, call_next):
     # Prevent huge bodies (basic hardening)
     cl = request.headers.get("content-length")
@@ -60,29 +87,29 @@ async def limit_body_size(request: Request, call_next):
         try:
             if int(cl) > BODY_LIMIT_BYTES:
                 logger.info(
-                    "payload_too_large",
-                    extra={"request_id": _rid(request), "content_length": cl},
+                    "request_id=%s payload_too_large content_length=%s",
+                    _rid(request),
+                    cl,
                 )
                 return JSONResponse(status_code=413, content={"error": "payload_too_large"})
         except ValueError:
             logger.info(
-                "invalid_content_length",
-                extra={"request_id": _rid(request), "content_length": cl},
+                "request_id=%s invalid_content_length content_length=%s",
+                _rid(request),
+                cl,
             )
             return JSONResponse(status_code=400, content={"error": "invalid_content_length"})
     return await call_next(request)
 
 
 @app.get("/health")
-async def health(request: Request) -> Dict[str, str]:
-    logger.info("health", extra={"request_id": _rid(request)})
+async def health() -> Dict[str, str]:
     return {"status": "ok", "service": "analytics-service"}
 
 
 @app.get("/ready")
-async def ready(request: Request) -> Dict[str, str]:
+async def ready() -> Dict[str, str]:
     # No external deps yet
-    logger.info("ready", extra={"request_id": _rid(request)})
     return {"status": "ready"}
 
 
@@ -90,23 +117,21 @@ async def ready(request: Request) -> Dict[str, str]:
 async def ingest_event(evt: RedirectEvent, request: Request) -> Dict[str, Any]:
     _counts[evt.code] += 1
     logger.info(
-        "event_accepted",
-        extra={
-            "request_id": _rid(request),
-            "code": evt.code,
-            "count": int(_counts[evt.code]),
-        },
+        "request_id=%s event_accepted code=%s count=%s",
+        _rid(request),
+        evt.code,
+        int(_counts[evt.code]),
     )
     return {"accepted": True, "code": evt.code}
 
 
 @app.get("/stats")
 async def stats(request: Request) -> Dict[str, Any]:
-    # Return top counts (small response)
     top = _counts.most_common(20)
     logger.info(
-        "stats_top",
-        extra={"request_id": _rid(request), "tracked_codes": len(_counts)},
+        "request_id=%s stats_top tracked_codes=%s",
+        _rid(request),
+        len(_counts),
     )
     return {
         "uptime_seconds": int(time.time() - _started_at),
@@ -118,18 +143,18 @@ async def stats(request: Request) -> Dict[str, Any]:
 @app.get("/stats/{code}")
 async def stats_code(code: str, request: Request) -> Dict[str, Any]:
     if not (1 <= len(code) <= 64):
-        logger.info("invalid_code", extra={"request_id": _rid(request), "code": code})
+        logger.info("request_id=%s invalid_code code=%s", _rid(request), code)
         return JSONResponse(status_code=400, content={"error": "invalid_code"})
 
     count = int(_counts.get(code, 0))
-    logger.info("stats_code", extra={"request_id": _rid(request), "code": code, "count": count})
+    logger.info("request_id=%s stats_code code=%s count=%s", _rid(request), code, count)
     return {"code": code, "count": count}
 
 
 @app.exception_handler(Exception)
 async def handle_unexpected(request: Request, exc: Exception):
     # Avoid leaking internals; keep logs in server output
-    logger.exception("unhandled_error", extra={"request_id": _rid(request)})
+    logger.exception("request_id=%s unhandled_error", _rid(request))
 
     if LOG_LEVEL in ("debug", "trace"):
         return JSONResponse(status_code=500, content={"error": "internal_error", "detail": str(exc)})
