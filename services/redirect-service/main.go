@@ -19,10 +19,10 @@ import (
 )
 
 type Config struct {
-	Host        string
-	Port        int
-	BaseURL     string
-	LogJSON     bool
+	Host    string
+	Port    int
+	BaseURL string
+	LogJSON bool
 
 	AnalyticsBaseURL  string
 	AnalyticsTimeout  time.Duration
@@ -58,10 +58,10 @@ func loadConfig() (Config, error) {
 	}
 
 	return Config{
-		Host:        host,
-		Port:        port,
-		BaseURL:     baseURL,
-		LogJSON:     logJSON,
+		Host:    host,
+		Port:    port,
+		BaseURL:  baseURL,
+		LogJSON:  logJSON,
 
 		AnalyticsBaseURL:  analyticsBase,
 		AnalyticsTimeout:  time.Duration(tms) * time.Millisecond,
@@ -86,7 +86,7 @@ type resolveResp struct {
 	LongURL string `json:"long_url"`
 }
 
-func resolveLongURL(client *http.Client, base string, code string) (string, int, error) {
+func resolveLongURL(client *http.Client, base string, code string, requestID string) (string, int, error) {
 	base = strings.TrimRight(base, "/")
 	endpoint := base + "/urls/" + url.PathEscape(code)
 
@@ -95,6 +95,11 @@ func resolveLongURL(client *http.Client, base string, code string) (string, int,
 		return "", 0, err
 	}
 	req.Header.Set("Accept", "application/json")
+
+	// Propagate request id to url-service for cross-service tracing.
+	if requestID != "" {
+		req.Header.Set(RequestIDHeader, requestID)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -159,6 +164,7 @@ type analyticsEvent struct {
 	TS        int64  `json:"ts,omitempty"`
 	UserAgent string `json:"user_agent,omitempty"`
 	Referrer  string `json:"referrer,omitempty"`
+	RequestID string `json:"request_id,omitempty"`
 }
 
 type analyticsSink struct {
@@ -174,9 +180,9 @@ type analyticsSink struct {
 func newAnalyticsSink(cfg Config, logf func(level, msg string, fields map[string]interface{})) *analyticsSink {
 	return &analyticsSink{
 		baseURL: strings.TrimRight(cfg.AnalyticsBaseURL, "/"),
-		client: &http.Client{Timeout: cfg.AnalyticsTimeout},
-		logf:   logf,
-		ch:     make(chan analyticsEvent, cfg.AnalyticsQueueLen),
+		client:  &http.Client{Timeout: cfg.AnalyticsTimeout},
+		logf:    logf,
+		ch:      make(chan analyticsEvent, cfg.AnalyticsQueueLen),
 	}
 }
 
@@ -219,15 +225,20 @@ func (s *analyticsSink) post(evt analyticsEvent) {
 	body, _ := json.Marshal(evt)
 	req, err := http.NewRequest(http.MethodPost, s.baseURL+"/events", bytes.NewReader(body))
 	if err != nil {
-		s.logf("error", "analytics request build failed", map[string]interface{}{"err": err.Error()})
+		s.logf("error", "analytics request build failed", map[string]interface{}{"err": err.Error(), "rid": evt.RequestID})
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
+	// Propagate request id to analytics-service.
+	if evt.RequestID != "" {
+		req.Header.Set(RequestIDHeader, evt.RequestID)
+	}
+
 	resp, err := s.client.Do(req)
 	if err != nil {
-		s.logf("error", "analytics post failed", map[string]interface{}{"err": err.Error()})
+		s.logf("error", "analytics post failed", map[string]interface{}{"err": err.Error(), "rid": evt.RequestID})
 		return
 	}
 	defer resp.Body.Close()
@@ -237,6 +248,7 @@ func (s *analyticsSink) post(evt analyticsEvent) {
 		s.logf("error", "analytics non-2xx", map[string]interface{}{
 			"status": resp.StatusCode,
 			"body":   strings.TrimSpace(string(b)),
+			"rid":    evt.RequestID,
 		})
 	}
 }
@@ -286,18 +298,21 @@ func main() {
 			return
 		}
 
+		rid := requestIDFromContext(r.Context())
+
 		code := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, "/r/"))
 		if code == "" || len(code) > 64 {
 			http.Error(w, "invalid_code", http.StatusBadRequest)
 			return
 		}
 
-		dest, status, err := resolveLongURL(resolveClient, cfg.BaseURL, code)
+		dest, status, err := resolveLongURL(resolveClient, cfg.BaseURL, code, rid)
 		if err != nil {
 			logf("error", "resolve failed", map[string]interface{}{
 				"code":   code,
 				"status": status,
 				"err":    err.Error(),
+				"rid":    rid,
 			})
 			http.Error(w, "bad_gateway", http.StatusBadGateway)
 			return
@@ -313,6 +328,7 @@ func main() {
 			Code:      code,
 			TS:        time.Now().Unix(),
 			UserAgent: r.UserAgent(),
+			RequestID: rid,
 		}
 		if isHTTPURL(ref) {
 			evt.Referrer = ref
@@ -320,6 +336,7 @@ func main() {
 		if ok := sink.Enqueue(evt); !ok {
 			logf("error", "analytics queue full (event dropped)", map[string]interface{}{
 				"code": code,
+				"rid":  rid,
 			})
 		}
 
@@ -327,6 +344,7 @@ func main() {
 			"code": code,
 			"to":   dest,
 			"ua":   r.UserAgent(),
+			"rid":  rid,
 		})
 
 		http.Redirect(w, r, dest, http.StatusFound)
@@ -337,9 +355,13 @@ func main() {
 		http.Error(w, "not_found", http.StatusNotFound)
 	})
 
+	handler := withRequestID(
+		withRequestLogging(mux, logf),
+	)
+
 	srv := &http.Server{
 		Addr:              cfg.Host + ":" + strconv.Itoa(cfg.Port),
-		Handler:           withRequestLogging(mux, logf),
+		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -381,6 +403,7 @@ func withRequestLogging(next http.Handler, logf func(level, msg string, fields m
 			"path":   r.URL.Path,
 			"status": ww.status,
 			"ms":     time.Since(start).Milliseconds(),
+			"rid":    requestIDFromContext(r.Context()),
 		})
 	})
 }
