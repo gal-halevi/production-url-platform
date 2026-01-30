@@ -1,0 +1,6 @@
+infra_state_key       = "aks/01-infra.tfstate"
+postgres_password     = "urlplatform"
+postgres_user         = "urlplatform"
+state_container       = "tfstate"
+state_resource_group  = "rg-urlplat-tfstate"
+state_storage_account = "urlplatstate2bb03255"
