@@ -1,15 +1,15 @@
 images:
   urlService:
-    repository: url-service
-    tag: dev
+    repository: ghcr.io/gal-halevi/url-service
+    tag: main
     pullPolicy: IfNotPresent
   redirectService:
-    repository: redirect-service
-    tag: dev
+    repository: ghcr.io/gal-halevi/redirect-service
+    tag: main
     pullPolicy: IfNotPresent
   analyticsService:
-    repository: analytics-service
-    tag: dev
+    repository: ghcr.io/gal-halevi/analytics-service
+    tag: main
     pullPolicy: IfNotPresent
   postgres:
     repository: postgres
