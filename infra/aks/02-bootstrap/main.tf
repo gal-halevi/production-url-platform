@@ -136,3 +136,12 @@ resource "kubectl_manifest" "argocd_bootstrap" {
 
   depends_on = [helm_release.argocd]
 }
+
+data "kubernetes_service_v1" "ingress_nginx_controller" {
+  metadata {
+    name      = "ingress-nginx-controller"
+    namespace = kubernetes_namespace_v1.ingress.metadata[0].name
+  }
+
+  depends_on = [helm_release.ingress_nginx]
+}
