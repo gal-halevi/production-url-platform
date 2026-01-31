@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/gal-halevi/production-url-platform/compare/url-service-v0.2.0...url-service-v0.3.0) (2026-01-31)
+
+
+### Features
+
+* add url-service ([c02bfe4](https://github.com/gal-halevi/production-url-platform/commit/c02bfe4fcb5a424a4b88c5448455eec1445f38be))
+* containerize url-service ([e0315cf](https://github.com/gal-halevi/production-url-platform/commit/e0315cfe69096e0cf9aca29a66922c9e12bcbdbd))
+* resolve redirects via url-service ([3311404](https://github.com/gal-halevi/production-url-platform/commit/3311404fce4becacb088befc5cf172290cc353a9))
+
 ## [0.2.0](https://github.com/gal-halevi/production-url-platform/compare/url-service-v0.1.0...url-service-v0.2.0) (2026-01-28)
 
 
