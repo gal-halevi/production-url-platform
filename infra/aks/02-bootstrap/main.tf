@@ -24,6 +24,14 @@ provider "helm" {
   }
 }
 
+provider "kubectl" {
+  host                   = data.terraform_remote_state.infra.outputs.host
+  client_certificate     = base64decode(data.terraform_remote_state.infra.outputs.client_certificate)
+  client_key             = base64decode(data.terraform_remote_state.infra.outputs.client_key)
+  cluster_ca_certificate = base64decode(data.terraform_remote_state.infra.outputs.cluster_ca_certificate)
+  load_config_file       = false
+}
+
 # 1) Create namespaces
 resource "kubernetes_namespace_v1" "env" {
   for_each = local.environments
@@ -71,31 +79,60 @@ resource "helm_release" "ingress_nginx" {
   version    = "4.10.1"
 
   values = [
-  yamlencode({
-    controller = {
-      service = {
-        externalTrafficPolicy = "Local"
+    yamlencode({
+      controller = {
+        service = {
+          externalTrafficPolicy = "Local"
+        }
       }
-    }
-  })
-]
+    })
+  ]
 }
 
-# 4) Deploy your platform chart into each env namespace using env values
-resource "helm_release" "url_platform" {
-  for_each = local.environments
+resource "kubernetes_namespace_v1" "argocd" {
+  metadata {
+    name = "argocd"
+  }
+}
 
-  name      = "${var.release_name}-${each.key}"
-  namespace = kubernetes_namespace_v1.env[each.key].metadata[0].name
+resource "helm_release" "argocd" {
+  name       = "argocd"
+  namespace  = kubernetes_namespace_v1.argocd.metadata[0].name
+  repository = "https://argoproj.github.io/argo-helm"
+  chart      = "argo-cd"
+  version    = "9.3.7" # pin a version; upgrade intentionally later
 
-  chart = var.chart_path
+  create_namespace = false
 
-  values = [
-    file(local.values_by_env[each.key])
-  ]
+  # Keep it simple first: ClusterIP, port-forward when needed.
+  values = [yamlencode({
+    server = {
+      service = {
+        type = "ClusterIP"
+      }
+    }
+  })]
+}
 
-  depends_on = [
-    helm_release.ingress_nginx,
-    kubernetes_secret_v1.postgres
-  ]
+resource "kubectl_manifest" "argocd_bootstrap" {
+  yaml_body = <<-YAML
+    apiVersion: argoproj.io/v1alpha1
+    kind: Application
+    metadata:
+      name: argocd-apps
+      namespace: ${kubernetes_namespace_v1.argocd.metadata[0].name}
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/gal-halevi/production-url-platform-gitops
+        targetRevision: main
+        path: argocd
+        directory:
+          recurse: true
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: ${kubernetes_namespace_v1.argocd.metadata[0].name}
+  YAML
+
+  depends_on = [helm_release.argocd]
 }
