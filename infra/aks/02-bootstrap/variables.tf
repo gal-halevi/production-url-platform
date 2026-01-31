@@ -29,27 +29,25 @@ variable "postgres_password" {
   sensitive = true
 }
 
-variable "chart_path" {
-  type    = string
-  default = "../../../charts/url-platform"
+variable "gitops_repo_url" {
+  description = "GitOps repository URL tracked by the ArgoCD bootstrap Application."
+  type        = string
 }
 
-variable "values_dev" {
-  type    = string
-  default = "../../../charts/url-platform/values-dev.yaml"
+variable "gitops_repo_revision" {
+  description = "GitOps repository revision (branch/tag/sha)."
+  type        = string
+  default     = "main"
 }
 
-variable "values_stg" {
-  type    = string
-  default = "../../../charts/url-platform/values-stg.yaml"
+variable "gitops_repo_path" {
+  description = "Path in the GitOps repo containing ArgoCD projects/apps."
+  type        = string
+  default     = "argocd"
 }
 
-variable "values_prod" {
-  type    = string
-  default = "../../../charts/url-platform/values-prod.yaml"
-}
-
-variable "release_name" {
-  type    = string
-  default = "url-platform"
+variable "argocd_bootstrap_app_name" {
+  description = "Name of the ArgoCD bootstrap Application."
+  type        = string
+  default     = "argocd-apps"
 }
