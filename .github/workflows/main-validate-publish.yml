@@ -125,3 +125,69 @@ jobs:
       context: services/analytics-service
     secrets:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  update-gitops-dev:
+    needs:
+      - changes
+      - publish-url-service
+      - publish-redirect-service
+      - publish-analytics-service
+    if: |
+      !failure() && !cancelled() &&
+      (needs.changes.outputs.url == 'true' || needs.changes.outputs.redirect == 'true' || needs.changes.outputs.analytics == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: gal-halevi/production-url-platform-gitops
+          ref: main
+          path: gitops
+          ssh-key: ${{ secrets.GITOPS_DEPLOY_KEY }}
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Update dev image tags (only changed services)
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          SHA_SHORT="${GITHUB_SHA::7}"
+          FILE="envs/dev/values.yaml"
+
+          if [[ "${{ needs.changes.outputs.url }}" == "true" ]]; then
+            yq -i ".images.urlService.tag = \"sha-${SHA_SHORT}\"" "$FILE"
+          fi
+
+          if [[ "${{ needs.changes.outputs.redirect }}" == "true" ]]; then
+            yq -i ".images.redirectService.tag = \"sha-${SHA_SHORT}\"" "$FILE"
+          fi
+
+          if [[ "${{ needs.changes.outputs.analytics }}" == "true" ]]; then
+            yq -i ".images.analyticsService.tag = \"sha-${SHA_SHORT}\"" "$FILE"
+          fi
+
+          echo "Updated $FILE:"
+          cat "$FILE"
+
+      - name: Commit & push
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          SHA_SHORT="${GITHUB_SHA::7}"
+          git add envs/dev/values.yaml
+          git commit -m "gitops(dev): bump image tags to sha-${SHA_SHORT}"
+          git push origin main
