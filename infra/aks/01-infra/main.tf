@@ -45,3 +45,17 @@ resource "azurerm_kubernetes_cluster" "this" {
 
   tags = local.tags
 }
+
+resource "azurerm_kubernetes_cluster_node_pool" "apps" {
+  name                  = "apps"
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.this.id
+  vm_size               = var.node_vm_size
+  mode                  = "User"
+
+  os_disk_type    = "Managed"
+  os_disk_size_gb = 30
+
+  auto_scaling_enabled = true
+  min_count            = 1
+  max_count            = 3
+}
