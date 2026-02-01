@@ -1,0 +1,114 @@
+name: promote-stg
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_env:
+        description: "Which env values to promote from (dev recommended)"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promote-stg
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: gal-halevi/production-url-platform-gitops
+          ref: main
+          path: gitops
+          ssh-key: ${{ secrets.GITOPS_DEPLOY_KEY }}
+
+      - name: Install yq (pinned)
+        run: |
+          YQ_VERSION=v4.44.1
+          curl -sSL https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64 \
+            -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Read tags from source env
+        id: read
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          SRC="${{ inputs.source_env }}"
+          SRC_FILE="envs/${SRC}/values.yaml"
+
+          URL_TAG="$(yq -r '.images.urlService.tag' "$SRC_FILE")"
+          REDIRECT_TAG="$(yq -r '.images.redirectService.tag' "$SRC_FILE")"
+          ANALYTICS_TAG="$(yq -r '.images.analyticsService.tag' "$SRC_FILE")"
+
+          echo "url_tag=$URL_TAG" >> "$GITHUB_OUTPUT"
+          echo "redirect_tag=$REDIRECT_TAG" >> "$GITHUB_OUTPUT"
+          echo "analytics_tag=$ANALYTICS_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "Promoting from $SRC_FILE:"
+          echo "  urlService: $URL_TAG"
+          echo "  redirectService: $REDIRECT_TAG"
+          echo "  analyticsService: $ANALYTICS_TAG"
+
+      - name: Create promotion branch in GitOps repo
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="promote/stg-${{ steps.read.outputs.url_tag }}"
+          git checkout -b "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Update stg values
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          FILE="envs/stg/values.yaml"
+
+          yq -i ".images.urlService.tag = \"${{ steps.read.outputs.url_tag }}\"" "$FILE"
+          yq -i ".images.redirectService.tag = \"${{ steps.read.outputs.redirect_tag }}\"" "$FILE"
+          yq -i ".images.analyticsService.tag = \"${{ steps.read.outputs.analytics_tag }}\"" "$FILE"
+
+          echo "Updated $FILE:"
+          cat "$FILE"
+
+      - name: Commit and push branch
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "No changes to commit (stg already matches)."
+            exit 0
+          fi
+
+          git add envs/stg/values.yaml
+          git commit -m "gitops(stg): promote from dev (${{
+            steps.read.outputs.url_tag
+          }})"
+          git push origin "$branch"
+
+      - name: Open PR in GitOps repo
+        env:
+          GH_TOKEN: ${{ secrets.GITOPS_PR_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Requires GitHub CLI (preinstalled on ubuntu-latest)
+          gh pr create \
+            --repo gal-halevi/production-url-platform-gitops \
+            --base main \
+            --head "$branch" \
+            --title "Promote dev images to stg (${{ steps.read.outputs.url_tag }})" \
+            --body "This PR promotes the currently deployed **dev** image tags into **stg** by updating \`envs/stg/values.yaml\`.\n\nTags:\n- urlService: \`${{ steps.read.outputs.url_tag }}\`\n- redirectService: \`${{ steps.read.outputs.redirect_tag }}\`\n- analyticsService: \`${{ steps.read.outputs.analytics_tag }}\`"
