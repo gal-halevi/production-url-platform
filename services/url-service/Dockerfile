@@ -16,6 +16,13 @@ RUN npm run build
 FROM node:22-alpine AS runtime
 WORKDIR /app
 
+# Build metadata (populated via --build-arg in CI)
+ARG GIT_SHA=unknown
+ARG APP_VERSION=unknown
+
+ENV GIT_SHA=$GIT_SHA
+ENV APP_VERSION=$APP_VERSION
+
 # Security: create non-root user
 RUN addgroup -S app && adduser -S app -G app
 USER app
