@@ -14,6 +14,7 @@ data:
   RATE_LIMIT_MAX: {{ .Values.urlService.rateLimitMax | quote }}
   RATE_LIMIT_TIME_WINDOW_MS: {{ .Values.urlService.rateLimitTimeWindowMs | quote }}
   BASE_URL: {{ .Values.urlService.baseUrl | quote }}
+  APP_ENV: {{ .Values.global.appEnv | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment

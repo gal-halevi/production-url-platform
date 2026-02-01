@@ -19,6 +19,15 @@ function buildStore(): UrlStore {
 
 const store = buildStore();
 
+const startedAt = new Date().toISOString();
+const buildInfo = {
+  service: "url-service",
+  version: process.env.APP_VERSION ?? "unknown",
+  commit: process.env.GIT_SHA ?? "unknown",
+  env: process.env.APP_ENV ?? "unknown",
+  started_at: startedAt
+};
+
 const app = Fastify({
   logger: {
     level: config.logLevel
@@ -48,7 +57,7 @@ app.addHook("onSend", async (req, reply) => {
 });
 
 app.get("/health", async () => {
-  return { status: "ok", service: "url-service" };
+  return { status: "ok", ...buildInfo };
 });
 
 app.get("/ready", async () => {
@@ -77,21 +86,21 @@ app.post(
         201: {
           type: "object",
           properties: {
-          code: { type: "string" },
-          short_url: { type: "string" },
-          long_url: { type: "string" }
+            code: { type: "string" },
+            short_url: { type: "string" },
+            long_url: { type: "string" }
           }
         },
         400: {
           type: "object",
           properties: {
-          error: { type: "string" }
+            error: { type: "string" }
           }
         },
         500: {
           type: "object",
           properties: {
-          error: { type: "string" }
+            error: { type: "string" }
           }
         }
       }
@@ -162,4 +171,7 @@ app.setErrorHandler((err, _req, reply) => {
 await store.init();
 
 await app.listen({ port: config.port, host: config.host });
-app.log.info({ port: config.port, storageMode: config.storageMode }, "url-service started");
+app.log.info(
+  { port: config.port, storageMode: config.storageMode, ...buildInfo },
+  "url-service started"
+);
