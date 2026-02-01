@@ -30,7 +30,7 @@ jobs:
           repository: gal-halevi/production-url-platform-gitops
           ref: main
           path: gitops
-          ssh-key: ${{ secrets.GITOPS_DEPLOY_KEY }}
+          token: ${{ secrets.GITOPS_TOKEN }}
 
       - name: Install yq (pinned)
         run: |
@@ -52,6 +52,7 @@ jobs:
           REDIRECT_TAG="$(yq -r '.images.redirectService.tag' "$SRC_FILE")"
           ANALYTICS_TAG="$(yq -r '.images.analyticsService.tag' "$SRC_FILE")"
 
+          echo "src_env=$SRC" >> "$GITHUB_OUTPUT"
           echo "url_tag=$URL_TAG" >> "$GITHUB_OUTPUT"
           echo "redirect_tag=$REDIRECT_TAG" >> "$GITHUB_OUTPUT"
           echo "analytics_tag=$ANALYTICS_TAG" >> "$GITHUB_OUTPUT"
@@ -68,7 +69,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          BRANCH="promote/stg-${{ steps.read.outputs.url_tag }}"
+          BRANCH="promote/stg-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git checkout -b "$BRANCH"
           echo "branch=$BRANCH" >> "$GITHUB_ENV"
 
@@ -89,26 +90,24 @@ jobs:
         working-directory: gitops
         run: |
           set -euo pipefail
-          if git diff --quiet; then
+          if git diff --quiet -- envs/stg/values.yaml; then
             echo "No changes to commit (stg already matches)."
-            exit 0
+            exit 1
           fi
 
+          SRC="${{ steps.read.outputs.src_env }}"
           git add envs/stg/values.yaml
-          git commit -m "gitops(stg): promote from dev (${{
-            steps.read.outputs.url_tag
-          }})"
+          git commit -m "gitops(stg): promote from ${SRC} (run ${GITHUB_RUN_ID})"
           git push origin "$branch"
 
       - name: Open PR in GitOps repo
         env:
-          GH_TOKEN: ${{ secrets.GITOPS_PR_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITOPS_TOKEN }}
         run: |
           set -euo pipefail
-          # Requires GitHub CLI (preinstalled on ubuntu-latest)
           gh pr create \
             --repo gal-halevi/production-url-platform-gitops \
             --base main \
             --head "$branch" \
-            --title "Promote dev images to stg (${{ steps.read.outputs.url_tag }})" \
-            --body "This PR promotes the currently deployed **dev** image tags into **stg** by updating \`envs/stg/values.yaml\`.\n\nTags:\n- urlService: \`${{ steps.read.outputs.url_tag }}\`\n- redirectService: \`${{ steps.read.outputs.redirect_tag }}\`\n- analyticsService: \`${{ steps.read.outputs.analytics_tag }}\`"
+            --title "Promote ${{ steps.read.outputs.src_env }} to stg (run ${GITHUB_RUN_ID})" \
+            --body "This PR promotes the currently deployed **${{ steps.read.outputs.src_env }}** image tags into **stg** by updating \`envs/stg/values.yaml\`.\n\nTags:\n- urlService: \`${{ steps.read.outputs.url_tag }}\`\n- redirectService: \`${{ steps.read.outputs.redirect_tag }}\`\n- analyticsService: \`${{ steps.read.outputs.analytics_tag }}\`"
