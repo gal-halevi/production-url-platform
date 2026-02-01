@@ -27,13 +27,16 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   default_node_pool {
-    name       = "system"
-    node_count = var.system_node_count
-    vm_size    = var.node_vm_size
+    name    = "system"
+    vm_size = var.node_vm_size
 
     os_disk_type    = "Managed"
     os_disk_size_gb = 30
     type            = "VirtualMachineScaleSets"
+
+    auto_scaling_enabled = true
+    min_count            = 1
+    max_count            = 3
   }
 
   network_profile {
@@ -44,4 +47,18 @@ resource "azurerm_kubernetes_cluster" "this" {
   role_based_access_control_enabled = true
 
   tags = local.tags
+}
+
+resource "azurerm_kubernetes_cluster_node_pool" "apps" {
+  name                  = "apps"
+  kubernetes_cluster_id = azurerm_kubernetes_cluster.this.id
+  vm_size               = var.node_vm_size
+  mode                  = "User"
+
+  os_disk_type    = "Managed"
+  os_disk_size_gb = 30
+
+  auto_scaling_enabled = true
+  min_count            = 1
+  max_count            = 3
 }
