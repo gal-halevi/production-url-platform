@@ -104,3 +104,6 @@ resources:
     limits:
       cpu: 500m
       memory: 512Mi
+
+global:
+  appEnv: unknown
