@@ -27,13 +27,16 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   default_node_pool {
-    name       = "system"
-    node_count = var.system_node_count
-    vm_size    = var.node_vm_size
+    name    = "system"
+    vm_size = var.node_vm_size
 
     os_disk_type    = "Managed"
     os_disk_size_gb = 30
     type            = "VirtualMachineScaleSets"
+
+    auto_scaling_enabled = true
+    min_count            = 1
+    max_count            = 3
   }
 
   network_profile {
