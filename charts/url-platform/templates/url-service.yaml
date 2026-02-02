@@ -12,7 +12,7 @@ data:
   BODY_LIMIT_BYTES: {{ .Values.urlService.bodyLimitBytes | quote }}
   RATE_LIMIT_ENABLED: {{ ternary "true" "false" .Values.urlService.rateLimitEnabled | quote }}
   RATE_LIMIT_MAX: {{ .Values.urlService.rateLimitMax | quote }}
-  RATE_LIMIT_TIME_WINDOW_MS: {{ .Values.urlService.rateLimitTimeWindowMs | quote }}
+  RATE_LIMIT_WINDOW_MS: {{ .Values.urlService.rateLimitWindowMs | quote }}
   BASE_URL: {{ .Values.urlService.baseUrl | quote }}
   APP_ENV: {{ .Values.global.appEnv | quote }}
 ---

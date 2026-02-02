@@ -28,10 +28,10 @@ urlService:
   host: 0.0.0.0
   storageMode: postgres
   logLevel: info
-  bodyLimitBytes: 1048576
+  bodyLimitBytes: 16384
   rateLimitEnabled: true
-  rateLimitMax: 50
-  rateLimitTimeWindowMs: 60000
+  rateLimitMax: 60
+  rateLimitWindowMs: 60000
   baseUrl: http://localhost:30000
   databaseUrlSecret:
     name: postgres-secret
