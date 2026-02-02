@@ -1,21 +1,21 @@
-name: promote-stg
+name: promote-prod
 
 on:
   workflow_dispatch:
     inputs:
       source_env:
-        description: "Promote from (dev recommended)"
+        description: "Promote from (stg recommended)"
         required: true
-        default: "dev"
+        default: "stg"
         type: choice
         options:
-          - dev
+          - stg
 
 permissions:
   contents: read
 
 concurrency:
-  group: promote-stg
+  group: promote-prod
   cancel-in-progress: false
 
 jobs:
@@ -23,6 +23,6 @@ jobs:
     uses: ./.github/workflows/_promote-env.yml
     with:
       source_env: ${{ inputs.source_env }}
-      target_env: stg
+      target_env: prod
     secrets:
       gitops_token: ${{ secrets.GITOPS_TOKEN }}
