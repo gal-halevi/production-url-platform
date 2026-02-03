@@ -1,0 +1,166 @@
+name: _promote-env
+
+on:
+  workflow_call:
+    inputs:
+      gitops_repo:
+        description: "GitOps repo (owner/name)"
+        required: false
+        type: string
+        default: "gal-halevi/production-url-platform-gitops"
+
+      source_env:
+        description: "Source env to promote from (e.g., dev/stg)"
+        required: true
+        type: string
+
+      target_env:
+        description: "Target env to promote to (e.g., stg/prod)"
+        required: true
+        type: string
+
+      values_file:
+        description: "Values file name within env folder"
+        required: false
+        type: string
+        default: "values.yaml"
+
+      yq_version:
+        description: "Pinned yq version"
+        required: false
+        type: string
+        default: "v4.44.1"
+
+    secrets:
+      gitops_token:
+        required: true
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout GitOps repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.gitops_repo }}
+          ref: main
+          path: gitops
+          token: ${{ secrets.gitops_token }}
+
+      - name: Install yq (pinned)
+        run: |
+          set -euo pipefail
+          YQ_VERSION="${{ inputs.yq_version }}"
+          curl -sSL "https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_amd64" \
+            -o /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+          yq --version
+
+      - name: Read tags from source env
+        id: read
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          SRC="${{ inputs.source_env }}"
+          VALUES="${{ inputs.values_file }}"
+          SRC_FILE="envs/${SRC}/${VALUES}"
+
+          if [[ ! -f "$SRC_FILE" ]]; then
+            echo "Source file not found: $SRC_FILE"
+            exit 1
+          fi
+
+          URL_TAG="$(yq -r '.images.urlService.tag' "$SRC_FILE")"
+          REDIRECT_TAG="$(yq -r '.images.redirectService.tag' "$SRC_FILE")"
+          ANALYTICS_TAG="$(yq -r '.images.analyticsService.tag' "$SRC_FILE")"
+
+          echo "src_env=$SRC" >> "$GITHUB_OUTPUT"
+          echo "url_tag=$URL_TAG" >> "$GITHUB_OUTPUT"
+          echo "redirect_tag=$REDIRECT_TAG" >> "$GITHUB_OUTPUT"
+          echo "analytics_tag=$ANALYTICS_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "Promoting from $SRC_FILE:"
+          echo "  urlService: $URL_TAG"
+          echo "  redirectService: $REDIRECT_TAG"
+          echo "  analyticsService: $ANALYTICS_TAG"
+
+      - name: Create promotion branch in GitOps repo
+        id: branch
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          TARGET="${{ inputs.target_env }}"
+          BRANCH="promote/${TARGET}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          git checkout -b "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+          echo "branch=$BRANCH" >> "$GITHUB_ENV"
+
+      - name: Update target values
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          TARGET="${{ inputs.target_env }}"
+          VALUES="${{ inputs.values_file }}"
+          FILE="envs/${TARGET}/${VALUES}"
+
+          if [[ ! -f "$FILE" ]]; then
+            echo "Target file not found: $FILE"
+            exit 1
+          fi
+
+          yq -i ".images.urlService.tag = \"${{ steps.read.outputs.url_tag }}\"" "$FILE"
+          yq -i ".images.redirectService.tag = \"${{ steps.read.outputs.redirect_tag }}\"" "$FILE"
+          yq -i ".images.analyticsService.tag = \"${{ steps.read.outputs.analytics_tag }}\"" "$FILE"
+
+          echo "Updated $FILE:"
+          cat "$FILE"
+
+      - name: Commit and push branch
+        working-directory: gitops
+        run: |
+          set -euo pipefail
+          TARGET="${{ inputs.target_env }}"
+          VALUES="${{ inputs.values_file }}"
+          FILE="envs/${TARGET}/${VALUES}"
+
+          if git diff --quiet -- "$FILE"; then
+            echo "No changes to commit (${TARGET} already matches ${{ steps.read.outputs.src_env }})."
+            exit 1
+          fi
+
+          SRC="${{ steps.read.outputs.src_env }}"
+          git add "$FILE"
+          git commit -m "gitops(${TARGET}): promote from ${SRC} (run ${GITHUB_RUN_ID})"
+          git push origin "$branch"
+
+      - name: Open PR in GitOps repo
+        env:
+          GH_TOKEN: ${{ secrets.gitops_token }}
+        run: |
+          set -euo pipefail
+          SRC="${{ steps.read.outputs.src_env }}"
+          TARGET="${{ inputs.target_env }}"
+          VALUES="${{ inputs.values_file }}"
+          FILE="envs/${TARGET}/${VALUES}"
+
+          cat > /tmp/pr-body.md <<EOF
+          This PR promotes the currently deployed **${SRC}** image tags into **${TARGET}** by updating \`${FILE}\`.
+
+          Tags:
+          - urlService: \`${{ steps.read.outputs.url_tag }}\`
+          - redirectService: \`${{ steps.read.outputs.redirect_tag }}\`
+          - analyticsService: \`${{ steps.read.outputs.analytics_tag }}\`
+          EOF
+
+          gh pr create \
+            --repo "${{ inputs.gitops_repo }}" \
+            --base main \
+            --head "$branch" \
+            --title "Promote ${SRC} to ${TARGET} (run ${GITHUB_RUN_ID})" \
+            --body-file /tmp/pr-body.md
