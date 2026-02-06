@@ -56,3 +56,8 @@ variable "argocd_bootstrap_app_name" {
   type        = string
   default     = "argocd-apps"
 }
+
+variable "acme_email" {
+  description = "Email for ACME (Let's Encrypt) account registration."
+  type        = string
+}
