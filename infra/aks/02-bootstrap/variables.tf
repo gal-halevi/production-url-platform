@@ -18,6 +18,11 @@ variable "infra_state_key" {
   description = "Blob name/key of the 01-infra state file (e.g., aks-infra.tfstate)."
 }
 
+variable "network_state_key" {
+  type        = string
+  description = "Blob name/key of the 00-network state file (e.g., aks-network.tfstate)."
+}
+
 # app-level secrets (you created per GitHub environment too, but for AKS we need K8s Secrets)
 variable "postgres_user" {
   type      = string

@@ -18,7 +18,7 @@ variable "cluster_name" {
   default = "urlplat-aks"
 }
 
-variable "resource_group_name" {
+variable "aks_resource_group_name" {
   type    = string
   default = "rg-urlplat-aks"
 }
@@ -38,4 +38,24 @@ variable "node_vm_size" {
 variable "system_node_count" {
   type    = number
   default = 1
+}
+
+variable "state_resource_group" {
+  type        = string
+  description = "Resource group name for tfstate storage."
+}
+
+variable "state_container" {
+  type        = string
+  description = "Blob container name (e.g., tfstate)."
+}
+
+variable "state_storage_account" {
+  type        = string
+  description = "Storage account name that holds the tfstate container."
+}
+
+variable "network_state_key" {
+  type        = string
+  description = "Blob name/key of the 00-network state file (e.g., aks-network.tfstate)."
 }
