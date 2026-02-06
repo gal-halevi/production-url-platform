@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/gal-halevi/production-url-platform/compare/url-service-v0.2.0...url-service-v0.3.0) (2026-02-06)
+
+
+### Features
+
+* **url-service:** add build metadata and APP_ENV runtime config ([#49](https://github.com/gal-halevi/production-url-platform/issues/49)) ([0e003ae](https://github.com/gal-halevi/production-url-platform/commit/0e003ae00f557be153a3b1c85cf7d21043e84238))
+
 ## [0.2.0](https://github.com/gal-halevi/production-url-platform/compare/url-service-v0.1.0...url-service-v0.2.0) (2026-01-28)
 
 
