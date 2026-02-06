@@ -166,3 +166,28 @@ data "kubernetes_service_v1" "ingress_nginx_controller" {
 
   depends_on = [helm_release.ingress_nginx]
 }
+
+# cert-manager namespace
+resource "kubernetes_namespace_v1" "cert_manager" {
+  metadata {
+    name = "cert-manager"
+  }
+}
+
+# Install cert-manager (cluster-wide)
+resource "helm_release" "cert_manager" {
+  name      = "cert-manager"
+  namespace = kubernetes_namespace_v1.cert_manager.metadata[0].name
+
+  repository = "https://charts.jetstack.io"
+  chart      = "cert-manager"
+  version    = "v1.19.3" # pinned intentionally
+
+  create_namespace = false
+
+  values = [
+    yamlencode({
+      installCRDs = true
+    })
+  ]
+}

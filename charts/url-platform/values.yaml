@@ -53,6 +53,7 @@ ingress:
   enabled: true
   className: nginx
   nodePortHttp: 30000
+  tls: []
   annotations:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/proxy-body-size: "1m"
