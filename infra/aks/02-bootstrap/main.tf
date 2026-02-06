@@ -8,6 +8,16 @@ data "terraform_remote_state" "infra" {
   }
 }
 
+data "terraform_remote_state" "network" {
+  backend = "azurerm"
+  config = {
+    resource_group_name  = var.state_resource_group
+    storage_account_name = var.state_storage_account
+    container_name       = var.state_container
+    key                  = var.network_state_key
+  }
+}
+
 provider "kubernetes" {
   host                   = data.terraform_remote_state.infra.outputs.host
   client_certificate     = base64decode(data.terraform_remote_state.infra.outputs.client_certificate)
@@ -83,6 +93,17 @@ resource "helm_release" "ingress_nginx" {
       controller = {
         service = {
           externalTrafficPolicy = "Local"
+
+          # Force Azure LB to use pre-created static IP
+          loadBalancerIP = data.terraform_remote_state.network.outputs.ingress_public_ip_address
+
+          annotations = {
+            # IP lives in a separate RG, so Azure needs to know where to find it
+            "service.beta.kubernetes.io/azure-load-balancer-resource-group" = data.terraform_remote_state.network.outputs.ingress_public_ip_rg
+
+            # (Optional but recommended on Azure)
+            "service.beta.kubernetes.io/azure-load-balancer-health-probe-request-path" = "/healthz"
+          }
         }
       }
     })

@@ -5,8 +5,26 @@ locals {
   }
 }
 
+data "terraform_remote_state" "network" {
+  backend = "azurerm"
+  config = {
+    resource_group_name  = var.state_resource_group
+    storage_account_name = var.state_storage_account
+    container_name       = var.state_container
+    key                  = var.network_state_key
+  }
+}
+
+resource "azurerm_role_assignment" "aks_network_contributor" {
+  scope                = data.terraform_remote_state.network.outputs.network_rg_id
+  role_definition_name = "Network Contributor"
+  principal_id         = azurerm_kubernetes_cluster.this.identity[0].principal_id
+
+  depends_on = [azurerm_kubernetes_cluster.this]
+}
+
 resource "azurerm_resource_group" "aks" {
-  name     = var.resource_group_name
+  name     = var.aks_resource_group_name
   location = var.location
   tags     = local.tags
 }
