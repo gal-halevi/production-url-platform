@@ -11,6 +11,12 @@ metadata:
   {{- end }}
 spec:
   ingressClassName: {{ .Values.ingress.className | quote }}
+
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+
   rules:
     {{- if .Values.ingress.hosts.enabled }}
     # Host-based routing (recommended for real clusters / multi-env)
