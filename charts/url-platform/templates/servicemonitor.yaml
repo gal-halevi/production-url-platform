@@ -5,7 +5,6 @@ metadata:
   name: {{ include "url-platform.fullname" . }}-url-service
   namespace: {{ .Release.Namespace }}
   labels:
-    release: kube-prometheus-stack
     {{- with .Values.monitoring.serviceMonitor.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
