@@ -116,3 +116,6 @@ monitoring:
     interval: 30s
     scrapeTimeout: 10s
     labels: {}
+  prometheusRule:
+    enabled: false
+    labels: {}
