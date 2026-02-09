@@ -99,6 +99,7 @@ kind: Service
 metadata:
   name: url-service
   labels:
+    app: url-service
     {{- include "url-platform.labels" . | nindent 4 }}
 spec:
   selector:
