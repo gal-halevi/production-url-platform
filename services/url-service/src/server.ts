@@ -7,6 +7,7 @@ import { MemoryUrlStore } from "./storage_memory.js";
 import { PostgresUrlStore } from "./storage_postgres.js";
 import { validateHttpUrl } from "./validate_url.js";
 import { getOrCreateRequestId } from "./request_id.js";
+import { registry } from "./metrics";
 
 const config = loadConfig();
 
@@ -69,6 +70,16 @@ app.get("/ready", async () => {
     await store.init();
   }
   return { status: "ready" };
+});
+
+app.get("/metrics", async (_req, reply) => {
+  try {
+    const metrics = await registry.metrics();
+    reply.header("Content-Type", registry.contentType).code(200).send(metrics);
+  } catch (err) {
+    app.log.error({ err }, "metrics failed");
+    reply.code(500).send("metrics_error");
+  }
 });
 
 app.post(
