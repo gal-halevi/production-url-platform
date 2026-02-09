@@ -20,6 +20,16 @@ in-memory and PostgreSQL-backed storage.
 - `GET /ready`  
   Readiness probe. Verifies storage connectivity (including PostgreSQL).
 
+- `GET /metrics`
+  Exposes Prometheus-compatible metrics in text format.
+
+  Metrics include:
+  - `http_requests_total` – total HTTP requests by method, route template, and status code
+  - `http_request_duration_seconds` – request latency histogram
+
+  ⚠️ Intended for **internal cluster scraping only** (Prometheus).
+  The endpoint should not be exposed publicly via ingress.
+
 - `POST /urls`  
   Create a short URL  
   Body:
@@ -29,6 +39,17 @@ in-memory and PostgreSQL-backed storage.
 
 - `GET /urls/:code`  
   Resolve a short code to its original URL.
+
+## Observability
+
+The service is instrumented with Prometheus metrics using Fastify lifecycle hooks.
+
+Design goals:
+- Low-cardinality labels (route templates, not raw URLs)
+- Metrics emitted for all requests, including errors
+- No application logic coupled to monitoring concerns
+
+Metrics are scraped by Prometheus via a `ServiceMonitor` in Kubernetes.
 
 ---
 
@@ -95,3 +116,7 @@ docker run --rm \
   -p 3000:3000 \
   url-service:dev
 ```
+
+Metrics can be viewed locally at:
+```bash
+curl http://localhost:3000/metrics

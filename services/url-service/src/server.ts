@@ -7,6 +7,8 @@ import { MemoryUrlStore } from "./storage_memory.js";
 import { PostgresUrlStore } from "./storage_postgres.js";
 import { validateHttpUrl } from "./validate_url.js";
 import { getOrCreateRequestId } from "./request_id.js";
+import { registry } from "./metrics.js";
+import { httpRequestsTotal, httpRequestDurationSeconds } from "./metrics.js";
 
 const config = loadConfig();
 
@@ -40,6 +42,33 @@ const app = Fastify({
   }
 });
 
+app.addHook("onRequest", async (req, reply) => {
+  reply.header("X-Request-Id", req.id);
+  (req as any)._metricsStart = process.hrtime.bigint();
+});
+
+app.addHook("onResponse", async (req, reply) => {
+  const start = (req as any)._metricsStart;
+  if (!start) return;
+
+  const durationNs = Number(process.hrtime.bigint() - start);
+  const durationSeconds = durationNs / 1e9;
+
+  const route =
+    typeof (req.routeOptions as any)?.url === "string"
+      ? (req.routeOptions as any).url
+      : "unknown";
+
+  const labels = {
+    method: req.method,
+    route,
+    status_code: String(reply.statusCode)
+  };
+
+  httpRequestsTotal.inc(labels);
+  httpRequestDurationSeconds.observe(labels, durationSeconds);
+});
+
 await app.register(helmet, {
   // reasonable defaults; can tune later behind ingress/load balancer
   contentSecurityPolicy: false
@@ -51,10 +80,6 @@ if (config.rateLimitEnabled) {
     timeWindow: config.rateLimitTimeWindowMs
   });
 }
-
-app.addHook("onSend", async (req, reply) => {
-  reply.header("X-Request-Id", req.id);
-});
 
 app.get("/health", async () => {
   return { status: "ok", ...buildInfo };
@@ -69,6 +94,16 @@ app.get("/ready", async () => {
     await store.init();
   }
   return { status: "ready" };
+});
+
+app.get("/metrics", async (_req, reply) => {
+  try {
+    const metrics = await registry.metrics();
+    reply.header("Content-Type", registry.contentType).code(200).send(metrics);
+  } catch (err) {
+    app.log.error({ err }, "metrics failed");
+    reply.code(500).send("metrics_error");
+  }
 });
 
 app.post(
