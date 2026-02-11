@@ -116,6 +116,21 @@ monitoring:
     interval: 30s
     scrapeTimeout: 10s
     labels: {}
-  prometheusRule:
-    enabled: false
-    labels: {}
+
+  prometheusRules:
+    labels:
+      release: monitoring
+
+    availability:
+      enabled: false
+
+    latencySLO:
+      enabled: false
+      thresholdSeconds: "0.5"
+      errorBudgetFraction: 0.05
+      fastBurnMultiplier: 14
+      slowBurnMultiplier: 2
+      fastBurnFor: 2m
+      slowBurnFor: 15m
+      fastSeverity: page
+      slowSeverity: ticket
