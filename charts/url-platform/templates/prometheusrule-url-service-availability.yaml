@@ -1,11 +1,11 @@
-{{- if .Values.monitoring.prometheusRule.enabled }}
+{{- if .Values.monitoring.prometheusRules.availability.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
-  name: {{ include "url-platform.fullname" . }}-url-service
+  name: {{ include "url-platform.fullname" . }}-url-service-availability
   namespace: {{ .Release.Namespace }}
   labels:
-    {{- with .Values.monitoring.prometheusRule.labels }}
+    {{- with .Values.monitoring.prometheusRules.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
 spec:
