@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import type { FastifyError } from "fastify";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { loadConfig } from "./config.js";
@@ -77,7 +78,8 @@ await app.register(helmet, {
 if (config.rateLimitEnabled) {
   await app.register(rateLimit, {
     max: config.rateLimitMax,
-    timeWindow: config.rateLimitTimeWindowMs
+    timeWindow: config.rateLimitTimeWindowMs,
+    allowList: (req) => req.url === "/health" || req.url === "/ready" || req.url === "/metrics"
   });
 }
 
@@ -197,10 +199,14 @@ app.get(
   }
 );
 
-app.setErrorHandler((err, _req, reply) => {
-  // avoid leaking internal details
+app.setErrorHandler((err: FastifyError, _req, reply) => {
   app.log.error({ err }, "request failed");
-  return reply.code(500).send({ error: "internal_error" });
+
+  const statusCode = err.statusCode ?? 500;
+
+  return reply.code(statusCode).send({
+    error: statusCode === 429 ? "rate_limited" : "internal_error"
+  });
 });
 
 await store.init();
