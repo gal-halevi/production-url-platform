@@ -78,7 +78,8 @@ await app.register(helmet, {
 if (config.rateLimitEnabled) {
   await app.register(rateLimit, {
     max: config.rateLimitMax,
-    timeWindow: config.rateLimitTimeWindowMs
+    timeWindow: config.rateLimitTimeWindowMs,
+    allowList: (req) => req.url === "/health" || req.url === "/ready" || req.url === "/metrics"
   });
 }
 
