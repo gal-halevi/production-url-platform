@@ -2,6 +2,15 @@
 {{- $ns := .Release.Namespace -}}
 {{- $threshold := .Values.monitoring.prometheusRules.latencySLO.thresholdSeconds | default "0.5" -}}
 {{- $budget := .Values.monitoring.prometheusRules.latencySLO.errorBudgetFraction | default 0.05 -}}
+
+{{- $fastShort := .Values.monitoring.prometheusRules.latencySLO.fastShortWindow | default "5m" -}}
+{{- $fastLong := .Values.monitoring.prometheusRules.latencySLO.fastLongWindow | default "1h" -}}
+{{- $slowShort := .Values.monitoring.prometheusRules.latencySLO.slowShortWindow | default "30m" -}}
+{{- $slowLong := .Values.monitoring.prometheusRules.latencySLO.slowLongWindow | default "6h" -}}
+
+{{- $fastBurn := .Values.monitoring.prometheusRules.latencySLO.fastBurnMultiplier | default 14 -}}
+{{- $slowBurn := .Values.monitoring.prometheusRules.latencySLO.slowBurnMultiplier | default 2 -}}
+
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -20,28 +29,28 @@ spec:
             (
               (
                 (
-                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[5m]))
+                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[{{ $fastShort }}]))
                 -
-                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le={{ $threshold | quote }} }[5m]))
+                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le={{ $threshold | quote }}}[{{ $fastShort }}]))
                 )
                 /
-                clamp_min(sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[5m])), 1e-9)
+                clamp_min(sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[{{ $fastShort }}])), 1e-9)
               )
               / {{ $budget }}
-            ) > {{ .Values.monitoring.prometheusRules.latencySLO.fastBurnMultiplier | default 14 }}
+            ) > {{ $fastBurn }}
             and
             (
               (
                 (
-                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[1h]))
+                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[{{ $fastLong }}]))
                 -
-                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le={{ $threshold | quote }} }[1h]))
+                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le={{ $threshold | quote }}}[{{ $fastLong }}]))
                 )
                 /
-                clamp_min(sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[1h])), 1e-9)
+                clamp_min(sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[{{ $fastLong }}])), 1e-9)
               )
               / {{ $budget }}
-            ) > {{ .Values.monitoring.prometheusRules.latencySLO.fastBurnMultiplier | default 14 }}
+            ) > {{ $fastBurn }}
           for: {{ .Values.monitoring.prometheusRules.latencySLO.fastBurnFor | default "2m" }}
           labels:
             severity: {{ .Values.monitoring.prometheusRules.latencySLO.fastSeverity | default "page" | quote }}
@@ -49,35 +58,35 @@ spec:
             env: {{ .Values.global.appEnv | default "unknown" | quote }}
           annotations:
             summary: "url-service latency SLO fast burn (p95>{{ $threshold }}s)"
-            description: "Error budget burn rate is high for both 5m and 1h windows. Users are experiencing sustained high latency."
+            description: "Error budget burn rate is high for both {{ $fastShort }} and {{ $fastLong }} windows. Users are experiencing sustained high latency."
 
         - alert: UrlServiceLatencySLOSlowBurn
           expr: |
             (
               (
                 (
-                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[30m]))
+                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[{{ $slowShort }}]))
                 -
-                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le={{ $threshold | quote }} }[30m]))
+                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le={{ $threshold | quote }}}[{{ $slowShort }}]))
                 )
                 /
-                clamp_min(sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[30m])), 1e-9)
+                clamp_min(sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[{{ $slowShort }}])), 1e-9)
               )
               / {{ $budget }}
-            ) > {{ .Values.monitoring.prometheusRules.latencySLO.slowBurnMultiplier | default 2 }}
+            ) > {{ $slowBurn }}
             and
             (
               (
                 (
-                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[6h]))
+                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[{{ $slowLong }}]))
                 -
-                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le={{ $threshold | quote }} }[6h]))
+                  sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le={{ $threshold | quote }}}[{{ $slowLong }}]))
                 )
                 /
-                clamp_min(sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[6h])), 1e-9)
+                clamp_min(sum(rate(http_request_duration_seconds_bucket{namespace="{{ $ns }}",service="url-service",le="+Inf"}[{{ $slowLong }}])), 1e-9)
               )
               / {{ $budget }}
-            ) > {{ .Values.monitoring.prometheusRules.latencySLO.slowBurnMultiplier | default 2 }}
+            ) > {{ $slowBurn }}
           for: {{ .Values.monitoring.prometheusRules.latencySLO.slowBurnFor | default "15m" }}
           labels:
             severity: {{ .Values.monitoring.prometheusRules.latencySLO.slowSeverity | default "ticket" | quote }}
@@ -85,5 +94,5 @@ spec:
             env: {{ .Values.global.appEnv | default "unknown" | quote }}
           annotations:
             summary: "url-service latency SLO slow burn (p95>{{ $threshold }}s)"
-            description: "Error budget burn rate is moderately high for both 30m and 6h windows. Investigate performance regression."
+            description: "Error budget burn rate is moderately high for both {{ $slowShort }} and {{ $slowLong }} windows. Investigate performance regression."
 {{- end }}

@@ -134,3 +134,8 @@ monitoring:
       slowBurnFor: 15m
       fastSeverity: page
       slowSeverity: ticket
+      # burn-rate windows
+      fastShortWindow: 5m
+      fastLongWindow: 1h
+      slowShortWindow: 30m
+      slowLongWindow: 6h
