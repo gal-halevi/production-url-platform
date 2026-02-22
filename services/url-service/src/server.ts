@@ -52,6 +52,9 @@ app.addHook("onResponse", async (req, reply) => {
   const start = (req as any)._metricsStart;
   if (!start) return;
 
+  // Exclude /metrics to avoid self-referential observations.
+  if (req.url === "/metrics") return;
+
   const durationNs = Number(process.hrtime.bigint() - start);
   const durationSeconds = durationNs / 1e9;
 
