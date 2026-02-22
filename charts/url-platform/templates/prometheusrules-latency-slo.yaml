@@ -1,0 +1,6 @@
+{{- if .Values.monitoring.prometheusRules.latencySLO.enabled }}
+{{- range .Values.monitoring.services }}
+---
+{{ include "url-platform.latencySLORule" (dict "svc" . "ctx" $) }}
+{{- end }}
+{{- end }}

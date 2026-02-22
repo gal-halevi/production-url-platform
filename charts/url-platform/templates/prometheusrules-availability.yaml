@@ -1,0 +1,6 @@
+{{- if .Values.monitoring.prometheusRules.availability.enabled }}
+{{- range .Values.monitoring.services }}
+---
+{{ include "url-platform.availabilityRule" (dict "svc" . "ctx" $) }}
+{{- end }}
+{{- end }}

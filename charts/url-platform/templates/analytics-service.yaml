@@ -54,6 +54,7 @@ kind: Service
 metadata:
   name: analytics-service
   labels:
+    app: analytics-service
     {{- include "url-platform.labels" . | nindent 4 }}
 spec:
   selector:
