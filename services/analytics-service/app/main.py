@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field, HttpUrl
 
 from app.request_id import RequestIdMiddleware
@@ -47,6 +48,11 @@ class RedirectEvent(BaseModel):
 
 app = FastAPI(title="analytics-service", version="0.1.0")
 app.add_middleware(RequestIdMiddleware)
+
+Instrumentator(
+    should_group_status_codes=False,
+    excluded_handlers=["/metrics", "/health", "/ready"],
+).instrument(app).expose(app, endpoint="/metrics")
 
 _started_at = time.time()
 

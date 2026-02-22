@@ -16,6 +16,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Config struct {
@@ -355,8 +357,14 @@ func main() {
 		http.Error(w, "not_found", http.StatusNotFound)
 	})
 
+	// Expose Prometheus metrics. Registered directly on the mux so it bypasses
+	// withMetrics to avoid recording observations about the scrape itself.
+	mux.Handle("/metrics", promhttp.Handler())
+
 	handler := withRequestID(
-		withRequestLogging(mux, logf),
+		withMetrics(
+			withRequestLogging(mux, logf),
+		),
 	)
 
 	srv := &http.Server{
@@ -389,6 +397,31 @@ func main() {
 	sink.Stop()
 
 	logf("info", "server stopped", nil)
+}
+
+func withMetrics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip recording metrics for the /metrics endpoint itself.
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		start := time.Now()
+		ww := &statusWriter{ResponseWriter: w, status: 200}
+		next.ServeHTTP(ww, r)
+
+		duration := time.Since(start).Seconds()
+		// Normalise route: collapse /r/<code> to /r/{code} to avoid high cardinality.
+		route := r.URL.Path
+		if len(route) > 3 && route[:3] == "/r/" {
+			route = "/r/{code}"
+		}
+		statusStr := strconv.Itoa(ww.status)
+
+		httpRequestsTotal.WithLabelValues(r.Method, route, statusStr).Inc()
+		httpRequestDurationSeconds.WithLabelValues(r.Method, route, statusStr).Observe(duration)
+	})
 }
 
 func withRequestLogging(next http.Handler, logf func(level, msg string, fields map[string]interface{})) http.Handler {

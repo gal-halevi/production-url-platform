@@ -57,6 +57,7 @@ kind: Service
 metadata:
   name: redirect-service
   labels:
+    app: redirect-service
     {{- include "url-platform.labels" . | nindent 4 }}
 spec:
   selector:

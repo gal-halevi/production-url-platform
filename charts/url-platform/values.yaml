@@ -110,6 +110,13 @@ global:
   appEnv: unknown
 
 monitoring:
+  # List of services to create ServiceMonitors and PrometheusRules for.
+  # Add a new entry here when onboarding a new service — no template changes needed.
+  services:
+    - url-service
+    - redirect-service
+    - analytics-service
+
   serviceMonitor:
     enabled: false
     path: /metrics

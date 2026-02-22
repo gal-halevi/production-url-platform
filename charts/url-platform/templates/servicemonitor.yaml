@@ -1,23 +1,6 @@
 {{- if .Values.monitoring.serviceMonitor.enabled }}
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: {{ include "url-platform.fullname" . }}-url-service
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- with .Values.monitoring.serviceMonitor.labels }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
-spec:
-  selector:
-    matchLabels:
-      app: url-service
-  namespaceSelector:
-    matchNames:
-      - {{ .Release.Namespace }}
-  endpoints:
-    - port: http
-      path: {{ .Values.monitoring.serviceMonitor.path | default "/metrics" }}
-      interval: {{ .Values.monitoring.serviceMonitor.interval | default "30s" }}
-      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout | default "10s" }}
+{{- range .Values.monitoring.services }}
+---
+{{ include "url-platform.serviceMonitor" (dict "svc" . "ctx" $) }}
+{{- end }}
 {{- end }}
