@@ -51,7 +51,7 @@ app.add_middleware(RequestIdMiddleware)
 
 Instrumentator(
     should_group_status_codes=False,
-    excluded_handlers=["/metrics", "/health", "/ready"],
+    excluded_handlers=["/metrics"],
 ).instrument(app).expose(app, endpoint="/metrics")
 
 _started_at = time.time()
