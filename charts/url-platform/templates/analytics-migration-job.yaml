@@ -36,7 +36,7 @@ spec:
               done
       containers:
         - name: flyway
-          image: flyway/flyway:10-alpine
+          image: flyway/flyway:12-alpine
           args:
             - migrate
           env:
@@ -61,6 +61,15 @@ spec:
               value: "public"
             - name: FLYWAY_VALIDATE_ON_MIGRATE
               value: "true"
+            # Required because the public schema already contains the urls table
+            # (created by url-service). Flyway treats any non-empty schema without
+            # a schema history table as an error unless this is set.
+            - name: FLYWAY_BASELINE_ON_MIGRATE
+              value: "true"
+            # Must be 0 so Flyway baselines BEFORE V1, allowing V1 to actually run.
+            # Default baseline version is 1, which causes V1 to be skipped.
+            - name: FLYWAY_BASELINE_VERSION
+              value: "0"
           volumeMounts:
             - name: migrations
               mountPath: /flyway/sql
