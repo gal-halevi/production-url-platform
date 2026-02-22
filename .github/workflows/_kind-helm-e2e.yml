@@ -57,11 +57,19 @@ jobs:
           docker build -t redirect-service:dev services/redirect-service
           docker build -t analytics-service:dev services/analytics-service
 
+      - name: Pull third-party images
+        run: |
+          # Pre-pull Flyway image so kind doesn't attempt to pull it during
+          # helm upgrade — the migration Job runs as a Helm hook and blocks
+          # the deploy, so any image pull delay causes an apparent hang.
+          docker pull flyway/flyway:12-alpine
+
       - name: Load images into kind
         run: |
           kind load docker-image url-service:dev --name url-platform
           kind load docker-image redirect-service:dev --name url-platform
           kind load docker-image analytics-service:dev --name url-platform
+          kind load docker-image flyway/flyway:12-alpine --name url-platform
 
       - name: Create namespace
         run: |

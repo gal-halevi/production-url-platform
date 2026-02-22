@@ -36,7 +36,9 @@ spec:
               done
       containers:
         - name: flyway
-          image: flyway/flyway:12-alpine
+          # Flyway 12-alpine — confirmed working on both amd64 (CI) and arm64 (Apple Silicon).
+          image: "{{ .Values.images.flyway.repository }}:{{ .Values.images.flyway.tag }}"
+          imagePullPolicy: {{ .Values.images.flyway.pullPolicy }}
           args:
             - migrate
           env:

@@ -17,6 +17,10 @@ images:
     repository: postgres
     tag: 16-alpine
     pullPolicy: IfNotPresent
+  flyway:
+    repository: flyway/flyway
+    tag: 12-alpine
+    pullPolicy: IfNotPresent
 
 replicaCount:
   urlService: 1
