@@ -48,6 +48,9 @@ redirectService:
 analyticsService:
   port: 8000
   logLevel: info
+  databaseUrlSecret:
+    name: postgres-secret
+    key: DATABASE_URL
 
 ingress:
   enabled: true

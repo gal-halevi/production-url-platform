@@ -34,6 +34,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: analytics-service-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.analyticsService.databaseUrlSecret.name | quote }}
+                  key: {{ .Values.analyticsService.databaseUrlSecret.key | quote }}
           resources:
             {{- toYaml .Values.resources.analyticsService | nindent 12 }}
           readinessProbe:

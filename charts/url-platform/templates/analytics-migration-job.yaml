@@ -1,0 +1,70 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: analytics-migration
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+  annotations:
+    # Run before any other resources are created/updated on install and upgrade.
+    # Helm waits for this Job to complete before proceeding with the release.
+    helm.sh/hook: pre-install,pre-upgrade
+    # Delete the previous Job run just before creating a new one.
+    # Preserves logs from the last run for inspection until the next deploy.
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: "0"
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: analytics-migration
+    spec:
+      restartPolicy: Never
+      initContainers:
+        # Wait for PostgreSQL to be ready before running migrations.
+        # Avoids Job failure on fresh cluster installs where Postgres may
+        # still be starting up when the hook fires.
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432; do
+                echo "Waiting for postgres..."
+                sleep 2
+              done
+      containers:
+        - name: flyway
+          image: flyway/flyway:10-alpine
+          args:
+            - migrate
+          env:
+            # Flyway requires a JDBC URL (jdbc:postgresql://...) which differs
+            # from the psycopg2 URL (postgresql://...) stored in the secret.
+            # We construct it directly here from the known service name and db.
+            - name: FLYWAY_URL
+              value: "jdbc:postgresql://postgres:5432/{{ .Values.postgres.db }}"
+            - name: FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.analyticsService.databaseUrlSecret.name | quote }}
+                  key: POSTGRES_USER
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.analyticsService.databaseUrlSecret.name | quote }}
+                  key: POSTGRES_PASSWORD
+            - name: FLYWAY_LOCATIONS
+              value: "filesystem:/flyway/sql"
+            - name: FLYWAY_DEFAULT_SCHEMA
+              value: "public"
+            - name: FLYWAY_VALIDATE_ON_MIGRATE
+              value: "true"
+          volumeMounts:
+            - name: migrations
+              mountPath: /flyway/sql
+      volumes:
+        - name: migrations
+          configMap:
+            name: analytics-migrations
