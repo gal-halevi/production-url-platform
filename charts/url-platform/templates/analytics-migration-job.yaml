@@ -5,13 +5,13 @@ metadata:
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
   annotations:
-    # Run before any other resources are created/updated on install and upgrade.
-    # Helm waits for this Job to complete before proceeding with the release.
-    helm.sh/hook: pre-install,pre-upgrade
-    # Delete the previous Job run just before creating a new one.
-    # Preserves logs from the last run for inspection until the next deploy.
-    helm.sh/hook-delete-policy: before-hook-creation
-    helm.sh/hook-weight: "0"
+    # ArgoCD: run after postgres (wave 0) and the migrations ConfigMap (wave 1)
+    # are applied and healthy, but before app Deployments (wave 3).
+    # ArgoCD waits for this Job to complete before proceeding to the next wave.
+    argocd.argoproj.io/sync-wave: "2"
+    # Clean up the previous Job before creating a new one on each sync.
+    # Preserves logs until the next deploy.
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
   backoffLimit: 3
   template:
