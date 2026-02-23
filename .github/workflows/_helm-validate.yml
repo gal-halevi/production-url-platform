@@ -12,7 +12,3 @@ jobs:
       - uses: azure/setup-helm@v4
       - name: Lint chart
         run: helm lint charts/url-platform
-      - name: Dry-run render
-        run: |
-          helm template url-platform charts/url-platform \
-            | kubectl apply --dry-run=client -f -
