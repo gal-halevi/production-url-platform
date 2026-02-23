@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: analytics-migration
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+  annotations:
+    # ArgoCD: run after postgres (wave 0) and the migrations ConfigMap (wave 1)
+    # are applied and healthy, but before app Deployments (wave 3).
+    # ArgoCD waits for this Job to complete before proceeding to the next wave.
+    argocd.argoproj.io/sync-wave: "2"
+    # Clean up the previous Job before creating a new one on each sync.
+    # Preserves logs until the next deploy.
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: analytics-migration
+    spec:
+      restartPolicy: Never
+      initContainers:
+        # Wait for PostgreSQL to be ready before running migrations.
+        # Avoids Job failure on fresh cluster installs where Postgres may
+        # still be starting up when the hook fires.
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432; do
+                echo "Waiting for postgres..."
+                sleep 2
+              done
+      containers:
+        - name: flyway
+          # Flyway 12-alpine — confirmed working on both amd64 (CI) and arm64 (Apple Silicon).
+          image: "{{ .Values.images.flyway.repository }}:{{ .Values.images.flyway.tag }}"
+          imagePullPolicy: {{ .Values.images.flyway.pullPolicy }}
+          args:
+            - migrate
+          env:
+            # Flyway requires a JDBC URL (jdbc:postgresql://...) which differs
+            # from the psycopg2 URL (postgresql://...) stored in the secret.
+            # We construct it directly here from the known service name and db.
+            - name: FLYWAY_URL
+              value: "jdbc:postgresql://postgres:5432/{{ .Values.postgres.db }}"
+            - name: FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.analyticsService.databaseUrlSecret.name | quote }}
+                  key: POSTGRES_USER
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.analyticsService.databaseUrlSecret.name | quote }}
+                  key: POSTGRES_PASSWORD
+            - name: FLYWAY_LOCATIONS
+              value: "filesystem:/flyway/sql"
+            - name: FLYWAY_DEFAULT_SCHEMA
+              value: "public"
+            - name: FLYWAY_VALIDATE_ON_MIGRATE
+              value: "true"
+            # Required because the public schema already contains the urls table
+            # (created by url-service). Flyway treats any non-empty schema without
+            # a schema history table as an error unless this is set.
+            - name: FLYWAY_BASELINE_ON_MIGRATE
+              value: "true"
+            # Must be 0 so Flyway baselines BEFORE V1, allowing V1 to actually run.
+            # Default baseline version is 1, which causes V1 to be skipped.
+            - name: FLYWAY_BASELINE_VERSION
+              value: "0"
+          volumeMounts:
+            - name: migrations
+              mountPath: /flyway/sql
+      volumes:
+        - name: migrations
+          configMap:
+            name: analytics-migrations

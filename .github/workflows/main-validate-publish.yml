@@ -75,23 +75,16 @@ jobs:
       (needs.changes.outputs.any_service == 'true' || needs.changes.outputs.compose_affecting == 'true')
     uses: ./.github/workflows/_compose-e2e.yml
 
-  kind-helm-e2e:
+  helm-validate:
     needs:
       - changes
-      - compose-e2e
-    # Run kind-helm e2e tests if relevant files changed AND compose-e2e didn't fail.
-    # Compose-e2e may be skipped (e.g., only k8s/charts changed) - that's OK.
-    # We only block if compose-e2e actually failed or was cancelled.
     if: |
       !failure() && !cancelled() &&
-      (needs.changes.outputs.any_service == 'true' || needs.changes.outputs.charts_or_k8s == 'true')
-    uses: ./.github/workflows/_kind-helm-e2e.yml
-    secrets:
-      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      needs.changes.outputs.charts_or_k8s == 'true'
+    uses: ./.github/workflows/_helm-validate.yml
 
   publish-url-service:
-    needs: [changes, kind-helm-e2e]
+    needs: [changes, compose-e2e, helm-validate]
     if: |
       !failure() && !cancelled() &&
       needs.changes.outputs.url == 'true'
@@ -103,7 +96,7 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   publish-redirect-service:
-    needs: [changes, kind-helm-e2e]
+    needs: [changes, compose-e2e, helm-validate]
     if: |
       !failure() && !cancelled() &&
       needs.changes.outputs.redirect == 'true'
@@ -115,7 +108,7 @@ jobs:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
   publish-analytics-service:
-    needs: [changes, kind-helm-e2e]
+    needs: [changes, compose-e2e, helm-validate]
     if: |
       !failure() && !cancelled() &&
       needs.changes.outputs.analytics == 'true'

@@ -4,6 +4,9 @@ metadata:
   name: postgres-data
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
+  annotations:
+    # ArgoCD: wave 0 — postgres must be fully ready before the migration Job (wave 2) runs.
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   accessModes:
     - ReadWriteOnce
@@ -17,6 +20,8 @@ metadata:
   name: postgres
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   replicas: {{ .Values.replicaCount.postgres }}
   selector:
@@ -75,6 +80,8 @@ metadata:
   name: postgres
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   selector:
     app: postgres

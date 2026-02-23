@@ -4,9 +4,10 @@ import logging
 import os
 import sys
 import time
-from collections import Counter
 from typing import Any, Dict, Optional
 
+import psycopg2
+import psycopg2.extras
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -30,6 +31,7 @@ def _env_int(name: str, default: int) -> int:
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
 BODY_LIMIT_BYTES = _env_int("BODY_LIMIT_BYTES", 16 * 1024)  # 16KB
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +39,17 @@ logging.basicConfig(
     format="%(levelname)s %(message)s",
 )
 logger = logging.getLogger("analytics-service")
+
+
+def get_db() -> psycopg2.extensions.connection:
+    """Open a new database connection per request.
+
+    Connection pooling (e.g. pgBouncer or psycopg2 pool) is a future
+    improvement. For current traffic volumes, per-request connections are fine.
+    """
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL environment variable is not set")
+    return psycopg2.connect(DATABASE_URL)
 
 
 class RedirectEvent(BaseModel):
@@ -55,9 +68,6 @@ Instrumentator(
 ).instrument(app).expose(app, endpoint="/metrics")
 
 _started_at = time.time()
-
-# Simple in-memory aggregation for now (we'll move to DB later)
-_counts: Counter[str] = Counter()
 
 
 def _rid(request: Request) -> str:
@@ -87,7 +97,6 @@ async def request_log(request: Request, call_next):
 
 @app.middleware("http")
 async def limit_body_size(request: Request, call_next):
-    # Prevent huge bodies (basic hardening)
     cl = request.headers.get("content-length")
     if cl is not None:
         try:
@@ -115,34 +124,67 @@ async def health() -> Dict[str, str]:
 
 @app.get("/ready")
 async def ready() -> Dict[str, str]:
-    # No external deps yet
+    # Verify DB connectivity - pod should not receive traffic if DB is unreachable
+    try:
+        conn = get_db()
+        conn.close()
+    except Exception as e:
+        logger.warning("readiness check failed: %s", e)
+        return JSONResponse(status_code=503, content={"status": "unavailable", "reason": "db_unreachable"})
     return {"status": "ready"}
 
 
 @app.post("/events", status_code=202)
 async def ingest_event(evt: RedirectEvent, request: Request) -> Dict[str, Any]:
-    _counts[evt.code] += 1
+    # UPSERT: increment count if code exists, insert with count=1 if not.
+    # ON CONFLICT is atomic - no race condition between check and insert.
+    conn = get_db()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO analytics (code, count)
+                    VALUES (%s, 1)
+                    ON CONFLICT (code) DO UPDATE
+                        SET count = analytics.count + 1
+                    """,
+                    (evt.code,),
+                )
+    finally:
+        conn.close()
+
     logger.info(
-        "request_id=%s event_accepted code=%s count=%s",
+        "request_id=%s event_accepted code=%s",
         _rid(request),
         evt.code,
-        int(_counts[evt.code]),
     )
     return {"accepted": True, "code": evt.code}
 
 
 @app.get("/stats")
 async def stats(request: Request) -> Dict[str, Any]:
-    top = _counts.most_common(20)
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT code, count FROM analytics ORDER BY count DESC LIMIT 20"
+            )
+            rows = cur.fetchall()
+            cur.execute("SELECT COUNT(*) AS total FROM analytics")
+            total = cur.fetchone()["total"]
+    finally:
+        conn.close()
+
     logger.info(
         "request_id=%s stats_top tracked_codes=%s",
         _rid(request),
-        len(_counts),
+        total,
     )
     return {
         "uptime_seconds": int(time.time() - _started_at),
-        "tracked_codes": len(_counts),
-        "top": [{"code": code, "count": count} for code, count in top],
+        "tracked_codes": total,
+        "top": [{"code": r["code"], "count": r["count"]} for r in rows],
     }
 
 
@@ -152,14 +194,21 @@ async def stats_code(code: str, request: Request) -> Dict[str, Any]:
         logger.info("request_id=%s invalid_code code=%s", _rid(request), code)
         return JSONResponse(status_code=400, content={"error": "invalid_code"})
 
-    count = int(_counts.get(code, 0))
+    conn = get_db()
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT count FROM analytics WHERE code = %s", (code,))
+            row = cur.fetchone()
+    finally:
+        conn.close()
+
+    count = int(row["count"]) if row else 0
     logger.info("request_id=%s stats_code code=%s count=%s", _rid(request), code, count)
     return {"code": code, "count": count}
 
 
 @app.exception_handler(Exception)
 async def handle_unexpected(request: Request, exc: Exception):
-    # Avoid leaking internals; keep logs in server output
     logger.exception("request_id=%s unhandled_error", _rid(request))
 
     if LOG_LEVEL in ("debug", "trace"):

@@ -47,14 +47,42 @@ services:
       - url-service
     restart: unless-stopped
 
+  analytics-migrate:
+    image: flyway/flyway:12-alpine
+    command: migrate
+    environment:
+      FLYWAY_URL: "jdbc:postgresql://postgres:5432/url_platform"
+      FLYWAY_USER: "url_platform"
+      FLYWAY_PASSWORD: "url_platform"
+      FLYWAY_LOCATIONS: "filesystem:/flyway/sql"
+      FLYWAY_VALIDATE_ON_MIGRATE: "true"
+      # Required because the public schema already contains the urls table
+      # (created by url-service). Flyway treats any non-empty schema without
+      # a schema history table as an error unless this is set.
+      FLYWAY_BASELINE_ON_MIGRATE: "true"
+      # Must be 0 so Flyway baselines BEFORE V1, allowing V1 to actually run.
+      # Default baseline version is 1, which causes V1 to be skipped.
+      FLYWAY_BASELINE_VERSION: "0"
+    volumes:
+      - ./charts/url-platform/migrations/analytics:/flyway/sql
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   analytics-service:
     build:
       context: services/analytics-service
     environment:
       PORT: "8000"
       LOG_LEVEL: "info"
+      DATABASE_URL: "postgresql://url_platform:url_platform@postgres:5432/url_platform"
     ports:
       - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      analytics-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
 volumes:

@@ -1,0 +1,19 @@
+name: _helm-validate
+
+on:
+  workflow_call: {}
+
+jobs:
+  helm-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Check migration SQL files are in sync
+        run: |
+          diff \
+            services/analytics-service/migrations/V1__create_analytics_table.sql \
+            charts/url-platform/migrations/analytics/V1__create_analytics_table.sql
+      - name: Lint chart
+        run: helm lint charts/url-platform

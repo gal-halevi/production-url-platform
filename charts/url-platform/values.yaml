@@ -17,6 +17,10 @@ images:
     repository: postgres
     tag: 16-alpine
     pullPolicy: IfNotPresent
+  flyway:
+    repository: flyway/flyway
+    tag: 12-alpine
+    pullPolicy: IfNotPresent
 
 postgres:
   db: url_platform
@@ -48,6 +52,9 @@ redirectService:
 analyticsService:
   port: 8000
   logLevel: info
+  databaseUrlSecret:
+    name: postgres-secret
+    key: DATABASE_URL
 
 ingress:
   enabled: true
