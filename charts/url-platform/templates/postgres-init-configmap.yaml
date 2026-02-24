@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+  annotations:
+    # ArgoCD: wave 0 — must exist before postgres Deployment starts.
+    argocd.argoproj.io/sync-wave: "0"
+data:
+  init-databases.sql: |
+    {{ .Files.Get "migrations/postgres/init-databases.sql" | nindent 4 }}

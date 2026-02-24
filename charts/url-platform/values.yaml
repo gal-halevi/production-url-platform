@@ -24,6 +24,7 @@ images:
 
 postgres:
   db: url_platform
+  analyticsDb: url_platform_analytics
   pvc:
     size: 1Gi
 
@@ -33,13 +34,13 @@ urlService:
   storageMode: postgres
   logLevel: info
   bodyLimitBytes: 16384
+  databaseUrlSecret:
+    name: postgres-secret
+    key: DATABASE_URL
   rateLimitEnabled: true
   rateLimitMax: 60
   rateLimitWindowMs: 60000
   baseUrl: http://localhost:30000
-  databaseUrlSecret:
-    name: postgres-secret
-    key: DATABASE_URL
   waitForPostgres: true
 
 redirectService:
@@ -54,7 +55,7 @@ analyticsService:
   logLevel: info
   databaseUrlSecret:
     name: postgres-secret
-    key: DATABASE_URL
+    key: DATABASE_URL_ANALYTICS
 
 ingress:
   enabled: true

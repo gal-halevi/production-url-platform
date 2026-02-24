@@ -46,7 +46,7 @@ spec:
             # from the psycopg2 URL (postgresql://...) stored in the secret.
             # We construct it directly here from the known service name and db.
             - name: FLYWAY_URL
-              value: "jdbc:postgresql://postgres:5432/{{ .Values.postgres.db }}"
+              value: "jdbc:postgresql://postgres:5432/{{ .Values.postgres.analyticsDb }}"
             - name: FLYWAY_USER
               valueFrom:
                 secretKeyRef:
