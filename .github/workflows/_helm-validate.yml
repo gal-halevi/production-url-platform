@@ -16,7 +16,7 @@ jobs:
             services/analytics-service/migrations/V1__create_analytics_table.sql \
             charts/url-platform/migrations/analytics/V1__create_analytics_table.sql
           diff \
-            services/url-service/migrations/V1__create_urls_table.sql \
-            charts/url-platform/migrations/url-service/V1__create_urls_table.sql
+            scripts/postgres/init-databases.sql \
+            charts/url-platform/migrations/postgres/init-databases.sql
       - name: Lint chart
         run: helm lint charts/url-platform
