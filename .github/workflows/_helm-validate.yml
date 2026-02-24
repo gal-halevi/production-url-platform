@@ -15,5 +15,8 @@ jobs:
           diff \
             services/analytics-service/migrations/V1__create_analytics_table.sql \
             charts/url-platform/migrations/analytics/V1__create_analytics_table.sql
+          diff \
+            services/url-service/migrations/V1__create_urls_table.sql \
+            charts/url-platform/migrations/url-service/V1__create_urls_table.sql
       - name: Lint chart
         run: helm lint charts/url-platform
