@@ -96,7 +96,7 @@ app.get("/ready", async () => {
   if (config.storageMode === "postgres") {
     // simplest check by doing a trivial operation
     // (we can add a dedicated ping method later)
-    await store.init();
+    await store.ping();
   }
   return { status: "ready" };
 });
@@ -211,8 +211,6 @@ app.setErrorHandler((err: FastifyError, _req, reply) => {
     error: statusCode === 429 ? "rate_limited" : "internal_error"
   });
 });
-
-await store.init();
 
 await app.listen({ port: config.port, host: config.host });
 app.log.info(
