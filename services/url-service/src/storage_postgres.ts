@@ -15,17 +15,8 @@ export class PostgresUrlStore implements UrlStore {
       connectionTimeoutMillis: 5_000
     });
   }
-
-  async init(): Promise<void> {
-    // Minimal schema bootstrap (for learning project).
-    // In later milestones, we’ll move this to migrations.
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS urls (
-        code TEXT PRIMARY KEY,
-        long_url TEXT NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-      );
-    `);
+  async ping(): Promise<void> {
+    await this.pool.query("SELECT 1");
   }
 
   async create(longUrl: string): Promise<UrlRecord> {

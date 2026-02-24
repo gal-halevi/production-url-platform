@@ -23,7 +23,7 @@ images:
     pullPolicy: IfNotPresent
 
 postgres:
-  db: url_platform
+  urlServiceDb: url_platform_urls
   analyticsDb: url_platform_analytics
   pvc:
     size: 1Gi

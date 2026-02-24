@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: url-service-migrations
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+  annotations:
+    # ArgoCD: wave 1 — must exist before the migration Job (wave 2) runs.
+    argocd.argoproj.io/sync-wave: "1"
+data:
+  V1__create_urls_table.sql: |
+    {{ .Files.Get "migrations/url-service/V1__create_urls_table.sql" | nindent 4 }}

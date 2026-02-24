@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: analytics-migration
+  name: url-service-migration
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
   annotations:
@@ -17,7 +17,7 @@ spec:
   template:
     metadata:
       labels:
-        app: analytics-migration
+        app: url-service-migration
     spec:
       restartPolicy: Never
       initContainers:
@@ -46,16 +46,16 @@ spec:
             # from the psycopg2 URL (postgresql://...) stored in the secret.
             # We construct it directly here from the known service name and db.
             - name: FLYWAY_URL
-              value: "jdbc:postgresql://postgres:5432/{{ .Values.postgres.analyticsDb }}"
+              value: "jdbc:postgresql://postgres:5432/{{ .Values.postgres.urlServiceDb }}"
             - name: FLYWAY_USER
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.analyticsService.databaseUrlSecret.name | quote }}
+                  name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
                   key: POSTGRES_USER
             - name: FLYWAY_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.analyticsService.databaseUrlSecret.name | quote }}
+                  name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
                   key: POSTGRES_PASSWORD
             - name: FLYWAY_LOCATIONS
               value: "filesystem:/flyway/sql"
@@ -63,10 +63,6 @@ spec:
               value: "public"
             - name: FLYWAY_VALIDATE_ON_MIGRATE
               value: "true"
-            # Separate history table per service — both share the same public schema
-            # so without this they would collide on the default flyway_schema_history table.
-            - name: FLYWAY_TABLE
-              value: "flyway_schema_history_analytics"
 
           volumeMounts:
             - name: migrations
@@ -74,4 +70,4 @@ spec:
       volumes:
         - name: migrations
           configMap:
-            name: analytics-migrations
+            name: url-service-migrations

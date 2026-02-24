@@ -5,7 +5,7 @@ export interface UrlRecord {
 }
 
 export interface UrlStore {
-  init(): Promise<void>;
+  ping(): Promise<void>;
   create(longUrl: string): Promise<UrlRecord>;
   get(code: string): Promise<UrlRecord | null>;
 }

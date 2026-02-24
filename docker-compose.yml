@@ -19,6 +19,22 @@ services:
       retries: 20
     restart: unless-stopped
 
+  url-migrate:
+    # Flyway 12-alpine — confirmed working on both amd64 (CI) and arm64 (Apple Silicon).
+    image: flyway/flyway:12-alpine
+    command: migrate
+    environment:
+      FLYWAY_URL: "jdbc:postgresql://postgres:5432/url_platform"
+      FLYWAY_USER: "url_platform"
+      FLYWAY_PASSWORD: "url_platform"
+      FLYWAY_LOCATIONS: "filesystem:/flyway/sql"
+      FLYWAY_VALIDATE_ON_MIGRATE: "true"
+    volumes:
+      - ./charts/url-platform/migrations/url-service:/flyway/sql
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   url-service:
     build:
       context: services/url-service
@@ -33,6 +49,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      url-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   redirect-service:
@@ -58,13 +76,6 @@ services:
       FLYWAY_PASSWORD: "url_platform"
       FLYWAY_LOCATIONS: "filesystem:/flyway/sql"
       FLYWAY_VALIDATE_ON_MIGRATE: "true"
-      # Required because the public schema already contains the urls table
-      # (created by url-service). Flyway treats any non-empty schema without
-      # a schema history table as an error unless this is set.
-      FLYWAY_BASELINE_ON_MIGRATE: "true"
-      # Must be 0 so Flyway baselines BEFORE V1, allowing V1 to actually run.
-      # Default baseline version is 1, which causes V1 to be skipped.
-      FLYWAY_BASELINE_VERSION: "0"
     volumes:
       - ./charts/url-platform/migrations/analytics:/flyway/sql
     depends_on:
