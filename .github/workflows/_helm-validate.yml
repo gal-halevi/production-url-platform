@@ -19,4 +19,4 @@ jobs:
             scripts/postgres/init-databases.sql \
             charts/url-platform/migrations/postgres/init-databases.sql
       - name: Lint chart
-        run: helm lint charts/url-platformgst
+        run: helm lint charts/url-platform
