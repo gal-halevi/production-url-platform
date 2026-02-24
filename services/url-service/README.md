@@ -2,8 +2,7 @@
 
 Creates and resolves short URLs.
 
-The service exposes health and readiness endpoints and supports both
-in-memory and PostgreSQL-backed storage.
+The service exposes health and readiness endpoints and supports both in-memory and PostgreSQL-backed storage.
 
 ---
 
@@ -18,20 +17,19 @@ in-memory and PostgreSQL-backed storage.
   - start timestamp
 
 - `GET /ready`  
-  Readiness probe. Verifies storage connectivity (including PostgreSQL).
+  Readiness probe. Verifies storage connectivity (including PostgreSQL ping).
 
-- `GET /metrics`
+- `GET /metrics`  
   Exposes Prometheus-compatible metrics in text format.
 
   Metrics include:
-  - `http_requests_total` – total HTTP requests by method, route template, and status code
-  - `http_request_duration_seconds` – request latency histogram
+  - `http_requests_total` — total HTTP requests by method, route template, and status code
+  - `http_request_duration_seconds` — request latency histogram
 
-  ⚠️ Intended for **internal cluster scraping only** (Prometheus).
-  The endpoint should not be exposed publicly via ingress.
+  ⚠️ Intended for **internal cluster scraping only** (Prometheus). Not exposed publicly via ingress.
 
 - `POST /urls`  
-  Create a short URL  
+  Create a short URL.  
   Body:
   ```json
   { "long_url": "https://example.com" }
@@ -39,6 +37,8 @@ in-memory and PostgreSQL-backed storage.
 
 - `GET /urls/:code`  
   Resolve a short code to its original URL.
+
+---
 
 ## Observability
 
@@ -53,34 +53,9 @@ Metrics are scraped by Prometheus via a `ServiceMonitor` in Kubernetes.
 
 ---
 
-## Configuration (environment variables)
-
-### Core
-- `PORT` (default: `3000`)
-- `HOST` (default: `0.0.0.0`)
-- `BASE_URL` (e.g. `https://r.dev.url-platform.local`)
-- `APP_ENV` (e.g. `dev`, `stg`, `prod`)
-
-### Storage
-- `STORAGE_MODE`: `memory | postgres`  
-  Defaults to `postgres` if `DATABASE_URL` is set, otherwise `memory`
-- `DATABASE_URL` (required for postgres mode)
-
-### Runtime
-- `LOG_LEVEL` (default: `info`)
-- `BODY_LIMIT_BYTES` (default: `16384`)
-
-### Rate limiting
-- `RATE_LIMIT_ENABLED` (default: `true`)
-- `RATE_LIMIT_MAX` (default: `60`)
-- `RATE_LIMIT_WINDOW_MS` (default: `60000`)
-
----
-
 ## Health metadata
 
-The `/health` endpoint exposes build and runtime metadata injected at build
-and deploy time:
+The `/health` endpoint exposes build and runtime metadata injected at build time and startup:
 
 ```json
 {
@@ -93,10 +68,52 @@ and deploy time:
 }
 ```
 
-This is useful for:
-- validating promotions across environments
-- debugging rollouts
-- confirming exactly which build is running
+`version` and `commit` are injected as Docker build args (`APP_VERSION`, `GIT_SHA`) by CI. The smoke test workflow reads the expected tag from the gitops values file and verifies it matches the deployed version on every environment sync.
+
+---
+
+## Database
+
+The service owns the `url_platform_urls` PostgreSQL database exclusively. No other service reads from or writes to this database.
+
+Schema migrations are managed by **Flyway**, running as a Kubernetes Job at ArgoCD sync wave 2 before the url-service Deployment starts at wave 3. Migration files live in `migrations/` (source of truth) with a chart-side copy in `charts/url-platform/migrations/url-service/`.
+
+---
+
+## Configuration (environment variables)
+
+### Core
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | Listening port |
+| `HOST` | `0.0.0.0` | Listening address |
+| `BASE_URL` | — | Public base URL for generated short URLs (e.g. `https://r.dev.example.com`) |
+| `APP_ENV` | — | Environment name, included in health response (`dev`, `stg`, `prod`) |
+
+### Storage
+| Variable | Default | Description |
+|---|---|---|
+| `STORAGE_MODE` | `postgres` if `DATABASE_URL` is set, else `memory` | Storage backend |
+| `DATABASE_URL` | — | PostgreSQL connection string (required for postgres mode). Injected from Kubernetes Secret (`postgres-secret`, key `DATABASE_URL`) |
+
+### Runtime
+| Variable | Default | Description |
+|---|---|---|
+| `LOG_LEVEL` | `info` | Log level |
+| `BODY_LIMIT_BYTES` | `16384` | Maximum request body size (bytes) |
+
+### Rate limiting
+| Variable | Default | Description |
+|---|---|---|
+| `RATE_LIMIT_ENABLED` | `true` | Enable per-IP rate limiting |
+| `RATE_LIMIT_MAX` | `60` | Maximum requests per window |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window (ms) |
+
+### Build-time (injected by CI)
+| Variable | Description |
+|---|---|
+| `APP_VERSION` | Immutable image tag (e.g. `sha-01e0766`) |
+| `GIT_SHA` | Short commit SHA (e.g. `01e0766`) |
 
 ---
 
@@ -120,3 +137,9 @@ docker run --rm \
 Metrics can be viewed locally at:
 ```bash
 curl http://localhost:3000/metrics
+```
+
+For a complete local stack with PostgreSQL and all services, use Docker Compose from the repo root:
+```bash
+docker compose up --build
+```
