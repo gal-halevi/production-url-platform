@@ -11,6 +11,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./scripts/postgres/init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U url_platform -d url_platform -h 127.0.0.1 -p 5432"]
       interval: 5s
@@ -48,10 +49,11 @@ services:
     restart: unless-stopped
 
   analytics-migrate:
+    # Flyway 12-alpine — confirmed working on both amd64 (CI) and arm64 (Apple Silicon).
     image: flyway/flyway:12-alpine
     command: migrate
     environment:
-      FLYWAY_URL: "jdbc:postgresql://postgres:5432/url_platform"
+      FLYWAY_URL: "jdbc:postgresql://postgres:5432/url_platform_analytics"
       FLYWAY_USER: "url_platform"
       FLYWAY_PASSWORD: "url_platform"
       FLYWAY_LOCATIONS: "filesystem:/flyway/sql"
@@ -75,7 +77,7 @@ services:
     environment:
       PORT: "8000"
       LOG_LEVEL: "info"
-      DATABASE_URL: "postgresql://url_platform:url_platform@postgres:5432/url_platform"
+      DATABASE_URL: "postgresql://url_platform:url_platform@postgres:5432/url_platform_analytics"
     ports:
       - "8000:8000"
     depends_on:
