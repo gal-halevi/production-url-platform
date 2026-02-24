@@ -28,6 +28,9 @@ services:
       FLYWAY_PASSWORD: "url_platform"
       FLYWAY_LOCATIONS: "filesystem:/flyway/sql"
       FLYWAY_VALIDATE_ON_MIGRATE: "true"
+      # Separate history table per service — both share the same public schema
+      # so without this they would collide on the default flyway_schema_history table.
+      FLYWAY_TABLE: "flyway_schema_history_url_service"
     volumes:
       - ./charts/url-platform/migrations/url-service:/flyway/sql
     depends_on:
@@ -75,6 +78,9 @@ services:
       FLYWAY_PASSWORD: "url_platform"
       FLYWAY_LOCATIONS: "filesystem:/flyway/sql"
       FLYWAY_VALIDATE_ON_MIGRATE: "true"
+      # Separate history table per service — both share the same public schema
+      # so without this they would collide on the default flyway_schema_history table.
+      FLYWAY_TABLE: "flyway_schema_history_analytics"
     volumes:
       - ./charts/url-platform/migrations/analytics:/flyway/sql
     depends_on:

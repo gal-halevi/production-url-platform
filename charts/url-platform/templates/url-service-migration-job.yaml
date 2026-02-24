@@ -59,6 +59,10 @@ spec:
               value: "public"
             - name: FLYWAY_VALIDATE_ON_MIGRATE
               value: "true"
+            # Separate history table per service — both share the same public schema
+            # so without this they would collide on the default flyway_schema_history table.
+            - name: FLYWAY_TABLE
+              value: "flyway_schema_history_url_service"
           volumeMounts:
             - name: migrations
               mountPath: /flyway/sql
