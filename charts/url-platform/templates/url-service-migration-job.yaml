@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: url-service-migration
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+  annotations:
+    # ArgoCD: run after postgres (wave 0) and the migrations ConfigMap (wave 1)
+    # are applied and healthy, but before app Deployments (wave 3).
+    # Runs in parallel with analytics-migration (also wave 2) — safe since
+    # both Jobs operate on independent tables with no cross-dependencies.
+    argocd.argoproj.io/sync-wave: "2"
+    # Clean up the previous Job before creating a new one on each sync.
+    # Preserves logs until the next deploy.
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: url-service-migration
+    spec:
+      restartPolicy: Never
+      initContainers:
+        # Wait for PostgreSQL to be ready before running migrations.
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432; do
+                echo "Waiting for postgres..."
+                sleep 2
+              done
+      containers:
+        - name: flyway
+          # Flyway 12-alpine — confirmed working on both amd64 (CI) and arm64 (Apple Silicon).
+          image: "{{ .Values.images.flyway.repository }}:{{ .Values.images.flyway.tag }}"
+          imagePullPolicy: {{ .Values.images.flyway.pullPolicy }}
+          args:
+            - migrate
+          env:
+            - name: FLYWAY_URL
+              value: "jdbc:postgresql://postgres:5432/{{ .Values.postgres.db }}"
+            - name: FLYWAY_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
+                  key: POSTGRES_USER
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
+                  key: POSTGRES_PASSWORD
+            - name: FLYWAY_LOCATIONS
+              value: "filesystem:/flyway/sql"
+            - name: FLYWAY_DEFAULT_SCHEMA
+              value: "public"
+            - name: FLYWAY_VALIDATE_ON_MIGRATE
+              value: "true"
+          volumeMounts:
+            - name: migrations
+              mountPath: /flyway/sql
+      volumes:
+        - name: migrations
+          configMap:
+            name: url-service-migrations
