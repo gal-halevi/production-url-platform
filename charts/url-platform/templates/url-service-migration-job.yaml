@@ -7,8 +7,7 @@ metadata:
   annotations:
     # ArgoCD: run after postgres (wave 0) and the migrations ConfigMap (wave 1)
     # are applied and healthy, but before app Deployments (wave 3).
-    # Runs in parallel with analytics-migration (also wave 2) — safe since
-    # both Jobs operate on independent tables with no cross-dependencies.
+    # ArgoCD waits for this Job to complete before proceeding to the next wave.
     argocd.argoproj.io/sync-wave: "2"
     # Clean up the previous Job before creating a new one on each sync.
     # Preserves logs until the next deploy.
@@ -23,6 +22,8 @@ spec:
       restartPolicy: Never
       initContainers:
         # Wait for PostgreSQL to be ready before running migrations.
+        # Avoids Job failure on fresh cluster installs where Postgres may
+        # still be starting up when the hook fires.
         - name: wait-for-postgres
           image: postgres:16-alpine
           command:
@@ -41,8 +42,11 @@ spec:
           args:
             - migrate
           env:
+            # Flyway requires a JDBC URL (jdbc:postgresql://...) which differs
+            # from the psycopg2 URL (postgresql://...) stored in the secret.
+            # We construct it directly here from the known service name and db.
             - name: FLYWAY_URL
-              value: "jdbc:postgresql://postgres:5432/{{ .Values.postgres.db }}"
+              value: "jdbc:postgresql://postgres:5432/{{ .Values.postgres.urlServiceDb }}"
             - name: FLYWAY_USER
               valueFrom:
                 secretKeyRef:
@@ -59,10 +63,7 @@ spec:
               value: "public"
             - name: FLYWAY_VALIDATE_ON_MIGRATE
               value: "true"
-            # Separate history table per service — both share the same public schema
-            # so without this they would collide on the default flyway_schema_history table.
-            - name: FLYWAY_TABLE
-              value: "flyway_schema_history_url_service"
+
           volumeMounts:
             - name: migrations
               mountPath: /flyway/sql

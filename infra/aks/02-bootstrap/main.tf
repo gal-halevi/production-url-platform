@@ -69,7 +69,7 @@ resource "kubernetes_secret_v1" "postgres" {
   data = {
     POSTGRES_USER          = var.postgres_user
     POSTGRES_PASSWORD      = var.postgres_password
-    DATABASE_URL           = "postgresql://${var.postgres_user}:${var.postgres_password}@postgres:5432/url_platform"
+    DATABASE_URL           = "postgresql://${var.postgres_user}:${var.postgres_password}@postgres:5432/url_platform_urls"
     DATABASE_URL_ANALYTICS = "postgresql://${var.postgres_user}:${var.postgres_password}@postgres:5432/url_platform_analytics"
   }
 }
