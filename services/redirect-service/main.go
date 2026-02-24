@@ -413,8 +413,15 @@ func withMetrics(next http.Handler) http.Handler {
 
 		duration := time.Since(start).Seconds()
 		// Normalise route: collapse /r/<code> to /r/{code} to avoid high cardinality.
-		route := r.URL.Path
-		if len(route) > 3 && route[:3] == "/r/" {
+		// Anything else that doesn't match a known route is collapsed to "unknown"
+		// to prevent bot/scanner paths from creating unbounded label cardinality.
+		route := "unknown"
+		switch {
+		case r.URL.Path == "/health":
+			route = "/health"
+		case r.URL.Path == "/ready":
+			route = "/ready"
+		case len(r.URL.Path) > 3 && r.URL.Path[:3] == "/r/":
 			route = "/r/{code}"
 		}
 		statusStr := strconv.Itoa(ww.status)
