@@ -1,46 +1,85 @@
 # 🚀 Production URL Platform
 
-A production-style URL platform built to demonstrate **modern DevOps practices end-to-end**:
-from local development, through CI, to Kubernetes deployments with Helm and ingress.
+A production-grade URL shortener platform built to demonstrate **modern DevOps practices end-to-end** — from local development and CI, through containerized microservices, to GitOps-driven deployment on Azure Kubernetes Service.
 
-This repository is intentionally designed as a **portfolio-quality project** rather than a toy example.
+This repository is intentionally designed as a **portfolio-quality project**, not a toy example. Every architectural decision reflects real-world production concerns.
 
 ---
 
 ## 🧩 What this repo demonstrates
 
-- Containerized microservices with Docker
-- Local orchestration with Docker Compose
-- Kubernetes deployment using kind (local clusters)
-- Helm charts with environment-driven values
-- Ingress-based routing using ingress-nginx
-- CI/CD with GitHub Actions:
-  - scoped unit tests per service
-  - Docker Compose end-to-end tests
-  - kind + Helm + ingress end-to-end tests
-- Secrets and configuration via Kubernetes Secrets and ConfigMaps
-- Production-oriented CI hardening (readiness checks, retries, diagnostics)
+- Containerized microservices (TypeScript, Go, Python) with Docker
+- Local full-stack orchestration with Docker Compose
+- Production Kubernetes deployment on **Azure AKS** via **Helm**
+- **GitOps** delivery with **ArgoCD** and a dedicated gitops repository
+- **Ordered deployments** using ArgoCD sync waves (postgres → config → migrations → app)
+- **Database schema migrations** with Flyway Jobs, run as Kubernetes Jobs at sync wave 2
+- **Per-service image publishing** to GHCR with immutable `sha-XXXXXXX` tags
+- **Automated dev promotion** on merge to `main`; stg/prod promotion via PR workflow
+- **Prometheus metrics** on all three services with cardinality-safe route normalization
+- **Grafana dashboards** for RPS, p95 latency, and top routes per service
+- **SLO-based alerting** with burn-rate rules (availability + latency) via PrometheusRules
+- **CI hardening**: scoped unit tests, Docker Compose e2e, SQL drift checks, gitops smoke tests
+- **Terraform** for AKS cluster, networking, namespaces, secrets, ingress-nginx, ArgoCD, cert-manager
 
 ---
 
 ## 🧱 Services
 
-This project consists of three services:
+| Service | Language | Responsibility |
+|---|---|---|
+| **url-service** | TypeScript / Fastify | Creates and stores short URLs, resolves short codes |
+| **redirect-service** | Go | Handles HTTP redirects, emits analytics events asynchronously |
+| **analytics-service** | Python / FastAPI | Ingests redirect events, exposes aggregated stats |
 
-- **url-service**  
-  Creates and stores short URLs (Node.js / TypeScript)
-
-- **redirect-service**  
-  Handles redirects and emits access events (Go)
-
-- **analytics-service**  
-  Aggregates redirect statistics (Python / FastAPI)
-
-All services communicate over HTTP and share a PostgreSQL database.
+All three services communicate over HTTP within the cluster. Each service owns its own PostgreSQL database — no shared schemas.
 
 ---
 
-## ⚡ Quickstart (local – Docker Compose)
+## 🗄️ Data layer
+
+A single PostgreSQL instance hosts two isolated databases:
+
+- `url_platform_urls` — owned exclusively by url-service
+- `url_platform_analytics` — owned exclusively by analytics-service
+
+Both databases are created via an init SQL script on fresh volumes. Schema migrations are managed by **Flyway** and run as Kubernetes Jobs at ArgoCD sync wave 2, before application Deployments start at wave 3.
+
+SQL migration files are maintained in `services/<svc>/migrations/` (source of truth), with chart-side copies in `charts/url-platform/migrations/<svc>/` required by Helm's `.Files.Get`. A CI drift check enforces that these two copies stay in sync.
+
+---
+
+## 📦 Repository structure
+
+```
+.
+├── charts/url-platform/        # Helm chart (all services, postgres, ingress, monitoring)
+│   ├── templates/              # Kubernetes manifests (Deployments, Jobs, ConfigMaps, etc.)
+│   ├── migrations/             # Chart-side SQL copies (loaded via .Files.Get)
+│   └── values.yaml             # Shared defaults
+│
+├── services/
+│   ├── url-service/            # TypeScript / Fastify
+│   ├── redirect-service/       # Go
+│   └── analytics-service/      # Python / FastAPI
+│
+├── infra/aks/
+│   ├── 00-network/             # VNet, subnets
+│   ├── 01-infra/               # AKS cluster, node pools
+│   └── 02-bootstrap/           # Namespaces, ArgoCD, ingress-nginx, cert-manager, secrets
+│
+├── scripts/
+│   ├── e2e-smoke.sh            # Docker Compose end-to-end smoke script
+│   └── postgres/init-databases.sql  # Source-of-truth DB init script
+│
+├── k8s/                        # Raw Kubernetes manifests (historical — see k8s/README.md)
+│
+└── .github/workflows/          # GitHub Actions CI/CD
+```
+
+---
+
+## ⚡ Quickstart (local — Docker Compose)
 
 Bring up the full stack locally:
 
@@ -48,18 +87,20 @@ Bring up the full stack locally:
 docker compose up --build
 ```
 
-Smoke checks:
+Health checks:
 
 ```bash
-curl http://localhost:3000/health
-curl http://localhost:8080/health
-curl http://localhost:8000/health
+curl http://localhost:3000/health   # url-service
+curl http://localhost:8080/health   # redirect-service
+curl http://localhost:8000/health   # analytics-service
 ```
 
 Create a short URL:
 
 ```bash
-curl -X POST http://localhost:3000/urls   -H 'content-type: application/json'   -d '{"long_url":"https://example.com"}'
+curl -X POST http://localhost:3000/urls \
+  -H 'content-type: application/json' \
+  -d '{"long_url":"https://example.com"}'
 ```
 
 Follow the redirect:
@@ -68,55 +109,80 @@ Follow the redirect:
 curl -i http://localhost:8080/r/<code>
 ```
 
-Stop everything:
+Teardown:
 
 ```bash
-docker compose down
+docker compose down -v
 ```
 
 ---
 
-## ☸️ Kubernetes & Helm (local)
+## ☸️ Kubernetes deployment
 
-The project can also be deployed into a local Kubernetes cluster using **kind**, **Helm**, and **ingress-nginx**.
+Production deployments are fully **GitOps-driven via ArgoCD**. Manual `helm` commands are not used in production.
 
-This path mirrors how the system is validated in CI.
+Deployment configuration (image tags, host names, feature flags per environment) lives in the companion repository: [`production-url-platform-gitops`](https://github.com/gal-halevi/production-url-platform-gitops).
 
-See:
-- [k8s/README.md](/k8s/README.md) – local Kubernetes setup with kind
-- [charts/url-platform](/charts/url-platform/) – Helm chart for the platform
+See [`charts/url-platform/README.md`](charts/url-platform/README.md) for details on the Helm chart, sync wave architecture, and migration pattern.
 
 ---
 
-## 🔁 CI overview
+## 🔁 CI/CD overview
 
-CI is implemented with **GitHub Actions** and is layered for speed and confidence:
+CI is implemented with **GitHub Actions** across two repos.
 
-1. **Unit tests**
-   - Executed per service, scoped by changed paths
-2. **Docker Compose E2E**
-   - Validates the full stack locally
-3. **kind + Helm E2E**
-   - Spins up a real Kubernetes cluster
-   - Deploys via Helm
-   - Routes traffic through ingress-nginx
-   - Performs end-to-end smoke tests via ingress
+### On pull request (`pr-validate.yml`)
+- Scoped unit tests per changed service
+- Docker Compose e2e tests (if any service or compose files changed)
+- `helm lint` validation (if chart or k8s files changed)
+- SQL migration drift check (chart-side copies vs. service-side sources)
 
-The pipeline is hardened against flakiness using readiness checks, retries, and detailed diagnostics on failure.
+### On merge to `main` (`main-validate-publish.yml`)
+- All of the above
+- Build and publish Docker images to GHCR with immutable `sha-XXXXXXX` tags
+- Auto-update `envs/dev/values.yaml` in the gitops repo with new image tags
+
+### Promotion to staging (`promote-stg.yml`)
+- Triggered manually via `workflow_dispatch`
+- Copies current dev image tags into a PR against the gitops repo's stg values file
+- Merge of that PR triggers ArgoCD sync on stg
+
+### Promotion to production (`promote-prod.yml`)
+- Triggered manually via `workflow_dispatch`
+- Copies current stg image tags into a PR against the gitops repo's prod values file
+- Merge of that PR triggers ArgoCD sync on prod
+
+### Smoke tests (gitops repo)
+- Triggered after ArgoCD syncs each environment
+- Waits for rollout, verifies deployed version, runs create → redirect → analytics e2e flow
 
 ---
 
-## 📚 Project documentation
+## 🏗️ Infrastructure
 
-- Architecture overview: [docs/PROJECT_ARCHITECTURE.md](/docs/PROJECT_ARCHITECTURE.md)
-- Milestones & progression: [docs/MILESTONE_TRACKER.md](/docs/MILESTONE_TRACKER.md)
-- Kubernetes (kind): [k8s/README.md](/k8s/README.md)
-- Helm chart: [charts/url-platform](/charts/url-platform/)
+Provisioned with **Terraform** in three layers (each with independent state):
+
+| Layer | What it provisions |
+|---|---|
+| `00-network` | VNet, subnets |
+| `01-infra` | AKS cluster, node pools |
+| `02-bootstrap` | Namespaces, ArgoCD, ingress-nginx, cert-manager, per-env secrets |
 
 ---
 
-## 🏗️ Status
+## 📊 Observability
 
-Work in progress.
+All three services expose Prometheus metrics at `/metrics` (not publicly exposed via ingress). Metrics are scraped by Prometheus via `ServiceMonitor` resources.
 
-The project is developed milestone-by-milestone with small, reviewable PRs and documented decisions, intentionally mirroring real-world DevOps workflows.
+- **Grafana dashboards** — RPS, p95 latency, and top routes for all three services
+- **PrometheusRules** — availability alerting and latency SLO burn-rate rules (fast + slow burn, page + ticket severity)
+
+---
+
+## 📚 Further reading
+
+- [Helm chart & sync wave architecture](charts/url-platform/README.md)
+- [url-service](services/url-service/README.md)
+- [redirect-service](services/redirect-service/README.md)
+- [analytics-service](services/analytics-service/README.md)
+- [Historical raw manifests](k8s/README.md)
