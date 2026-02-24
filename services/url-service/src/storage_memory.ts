@@ -4,8 +4,8 @@ import type { UrlRecord, UrlStore } from "./storage.js";
 export class MemoryUrlStore implements UrlStore {
   private readonly map = new Map<string, UrlRecord>();
 
-  async init(): Promise<void> {
-    // nothing
+  async ping(): Promise<void> {
+    // nothing — in-memory store is always available
   }
 
   async create(longUrl: string): Promise<UrlRecord> {
