@@ -34,6 +34,28 @@ spec:
         runAsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: wait-for-postgres
+          image: "{{ .Values.images.postgres.repository }}:{{ .Values.images.postgres.tag }}"
+          imagePullPolicy: {{ .Values.images.postgres.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h postgres -p 5432; do
+                echo "waiting for postgres..."
+                sleep 2
+              done
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: analytics-service
           image: "{{ .Values.images.analyticsService.repository }}:{{ .Values.images.analyticsService.tag }}"
@@ -68,6 +90,9 @@ spec:
               port: {{ .Values.analyticsService.port }}
             initialDelaySeconds: 10
             periodSeconds: 10
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
