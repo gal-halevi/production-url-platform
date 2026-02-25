@@ -36,11 +36,24 @@ spec:
         app: url-service
         {{- include "url-platform.labels" . | nindent 8 }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       {{- if .Values.urlService.waitForPostgres }}
       initContainers:
         - name: wait-for-postgres
           image: "{{ .Values.images.postgres.repository }}:{{ .Values.images.postgres.tag }}"
           imagePullPolicy: {{ .Values.images.postgres.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: PGUSER
               valueFrom:
@@ -62,11 +75,19 @@ spec:
                 echo "waiting for postgres..."
                 sleep 2
               done
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       {{- end }}
       containers:
         - name: url-service
           image: "{{ .Values.images.urlService.repository }}:{{ .Values.images.urlService.tag }}"
           imagePullPolicy: {{ .Values.images.urlService.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: {{ .Values.urlService.port }}
           envFrom:
@@ -96,6 +117,9 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 6
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

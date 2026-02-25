@@ -20,12 +20,23 @@ spec:
         app: url-service-migration
     spec:
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
       initContainers:
         # Wait for PostgreSQL to be ready before running migrations.
         # Avoids Job failure on fresh cluster installs where Postgres may
         # still be starting up when the hook fires.
         - name: wait-for-postgres
           image: postgres:16-alpine
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           command:
             - sh
             - -c
@@ -34,11 +45,21 @@ spec:
                 echo "Waiting for postgres..."
                 sleep 2
               done
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
       containers:
         - name: flyway
           # Flyway 12-alpine — confirmed working on both amd64 (CI) and arm64 (Apple Silicon).
           image: "{{ .Values.images.flyway.repository }}:{{ .Values.images.flyway.tag }}"
           imagePullPolicy: {{ .Values.images.flyway.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           args:
             - migrate
           env:
@@ -67,7 +88,15 @@ spec:
           volumeMounts:
             - name: migrations
               mountPath: /flyway/sql
+            - name: tmp
+              mountPath: /tmp
+            - name: flyway-temp
+              mountPath: /flyway/temp
       volumes:
         - name: migrations
           configMap:
             name: url-service-migrations
+        - name: tmp
+          emptyDir: {}
+        - name: flyway-temp
+          emptyDir: {}

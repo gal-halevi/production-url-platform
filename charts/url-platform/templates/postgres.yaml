@@ -33,10 +33,23 @@ spec:
         app: postgres
         {{- include "url-platform.labels" . | nindent 8 }}
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: postgres
           image: "{{ .Values.images.postgres.repository }}:{{ .Values.images.postgres.tag }}"
           imagePullPolicy: {{ .Values.images.postgres.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            # readOnlyRootFilesystem intentionally omitted — PostgreSQL requires
+            # writable paths beyond the data volume (/tmp, /var/run/postgresql).
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 5432
           env:
