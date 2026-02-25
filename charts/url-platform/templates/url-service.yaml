@@ -42,7 +42,6 @@ spec:
         runAsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
-      {{- if .Values.urlService.waitForPostgres }}
       initContainers:
         - name: wait-for-postgres
           image: "{{ .Values.images.postgres.repository }}:{{ .Values.images.postgres.tag }}"
@@ -54,19 +53,6 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-          env:
-            - name: PGUSER
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
-                  key: POSTGRES_USER
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.urlService.databaseUrlSecret.name | quote }}
-                  key: POSTGRES_PASSWORD
-            - name: PGDATABASE
-              value: {{ .Values.postgres.db | quote }}
           command:
             - sh
             - -c
@@ -78,7 +64,6 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-      {{- end }}
       containers:
         - name: url-service
           image: "{{ .Values.images.urlService.repository }}:{{ .Values.images.urlService.tag }}"

@@ -41,7 +41,6 @@ urlService:
   rateLimitMax: 60
   rateLimitWindowMs: 60000
   baseUrl: http://localhost:30000
-  waitForPostgres: true
 
 redirectService:
   port: 8080
