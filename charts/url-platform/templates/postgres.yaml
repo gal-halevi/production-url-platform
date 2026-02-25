@@ -72,6 +72,10 @@ spec:
               mountPath: /var/lib/postgresql/data
             - name: postgres-init
               mountPath: /docker-entrypoint-initdb.d/
+            - name: tmp
+              mountPath: /tmp
+            - name: postgres-run
+              mountPath: /var/run/postgresql
           readinessProbe:
             exec:
               command:
@@ -89,6 +93,10 @@ spec:
         - name: postgres-init
           configMap:
             name: postgres-init
+        - name: tmp
+          emptyDir: {}
+        - name: postgres-run
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
