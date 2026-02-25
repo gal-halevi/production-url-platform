@@ -1,0 +1,192 @@
+# Network policies enforce least-privilege communication between pods.
+#
+# Default posture: deny all ingress to every pod in the namespace.
+# Explicit allow rules below open only the paths that are required.
+#
+# Communication matrix:
+#   ingress-nginx   → url-service        (API: POST /urls, GET /urls/:code)
+#   ingress-nginx   → redirect-service   (GET /r/{code})
+#   ingress-nginx   → analytics-service  (GET /stats, GET /stats/{code})
+#   redirect-service → url-service       (GET /urls/{code} — internal resolve)
+#   redirect-service → analytics-service (POST /events — async analytics emit)
+#   url-service      → postgres          (read/write url_platform_urls)
+#   analytics-service → postgres         (read/write url_platform_analytics)
+#   all pods         → kube-dns          (UDP/TCP 53 — cluster DNS resolution)
+
+---
+# Default deny: block all ingress to all pods in this namespace.
+# Every allowed path must be explicitly permitted below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+
+---
+# url-service: accept traffic from ingress-nginx and redirect-service only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: url-service-ingress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: url-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: {{ .Values.urlService.port }}
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redirect-service
+      ports:
+        - port: {{ .Values.urlService.port }}
+          protocol: TCP
+
+---
+# redirect-service: accept traffic from ingress-nginx only.
+# (redirect-service calls out to url-service and analytics-service — those
+#  are egress from redirect-service, not ingress to it.)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redirect-service-ingress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: redirect-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: {{ .Values.redirectService.port }}
+          protocol: TCP
+
+---
+# analytics-service: accept traffic from ingress-nginx and redirect-service only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: analytics-service-ingress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: analytics-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: {{ .Values.analyticsService.port }}
+          protocol: TCP
+    - from:
+        - podSelector:
+            matchLabels:
+              app: redirect-service
+      ports:
+        - port: {{ .Values.analyticsService.port }}
+          protocol: TCP
+
+---
+# postgres: accept traffic from url-service, analytics-service, and migration Jobs only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-ingress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: url-service
+        - podSelector:
+            matchLabels:
+              app: analytics-service
+        - podSelector:
+            matchLabels:
+              app: url-service-migration
+        - podSelector:
+            matchLabels:
+              app: analytics-migration
+      ports:
+        - port: 5432
+          protocol: TCP
+
+---
+# Prometheus scraping: allow prometheus to scrape /metrics on all three services.
+# Prometheus runs in the monitoring namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - port: {{ .Values.urlService.port }}
+          protocol: TCP
+        - port: {{ .Values.redirectService.port }}
+          protocol: TCP
+        - port: {{ .Values.analyticsService.port }}
+          protocol: TCP
+
+---
+# DNS egress: all pods need to resolve cluster-internal hostnames.
+# Without this, default-deny would break DNS and nothing would start.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
