@@ -1,21 +1,29 @@
 # Network policies enforce least-privilege communication between pods.
 #
-# Default posture: deny all ingress to every pod in the namespace.
+# Default posture: deny all ingress and egress to every pod in the namespace.
 # Explicit allow rules below open only the paths that are required.
 #
-# Communication matrix:
-#   ingress-nginx   → url-service        (API: POST /urls, GET /urls/:code)
-#   ingress-nginx   → redirect-service   (GET /r/{code})
-#   ingress-nginx   → analytics-service  (GET /stats, GET /stats/{code})
-#   redirect-service → url-service       (GET /urls/{code} — internal resolve)
-#   redirect-service → analytics-service (POST /events — async analytics emit)
-#   url-service      → postgres          (read/write url_platform_urls)
-#   analytics-service → postgres         (read/write url_platform_analytics)
-#   all pods         → kube-dns          (UDP/TCP 53 — cluster DNS resolution)
+# Communication matrix (ingress):
+#   ingress-nginx    → url-service        (API: POST /urls, GET /urls/:code)
+#   ingress-nginx    → redirect-service   (GET /r/{code})
+#   ingress-nginx    → analytics-service  (GET /stats, GET /stats/{code})
+#   redirect-service → url-service        (GET /urls/{code} — internal resolve)
+#   redirect-service → analytics-service  (POST /events — async analytics emit)
+#   url-service      → postgres           (read/write url_platform_urls)
+#   analytics-service → postgres          (read/write url_platform_analytics)
+#   migration jobs   → postgres           (Flyway schema migrations)
+#   prometheus       → all services       (/metrics scrape)
+#
+# Communication matrix (egress):
+#   all pods          → CoreDNS :53       (cluster DNS resolution)
+#   url-service       → postgres :5432
+#   analytics-service → postgres :5432
+#   redirect-service  → url-service :3000
+#   redirect-service  → analytics-service :8000
+#   migration jobs    → postgres :5432
 
 ---
-# Default deny: block all ingress to all pods in this namespace.
-# Every allowed path must be explicitly permitted below.
+# Default deny: block all ingress to all pods in the namespace.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -28,7 +36,42 @@ spec:
     - Ingress
 
 ---
-# url-service: accept traffic from ingress-nginx and redirect-service only.
+# Default deny: block all egress from all pods in the namespace.
+# Each service must have an explicit egress policy below.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+
+---
+# All pods: allow egress to CoreDNS on port 53.
+# Required for cluster-internal hostname resolution (postgres, url-service, etc.).
+# Must be paired with every egress policy below — without DNS nothing starts.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+
+---
+# url-service: accept ingress from ingress-nginx and redirect-service.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -58,9 +101,30 @@ spec:
           protocol: TCP
 
 ---
-# redirect-service: accept traffic from ingress-nginx only.
-# (redirect-service calls out to url-service and analytics-service — those
-#  are egress from redirect-service, not ingress to it.)
+# url-service: allow egress to postgres only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: url-service-egress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: url-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+
+---
+# redirect-service: accept ingress from ingress-nginx only.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -83,7 +147,37 @@ spec:
           protocol: TCP
 
 ---
-# analytics-service: accept traffic from ingress-nginx and redirect-service only.
+# redirect-service: allow egress to url-service and analytics-service.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redirect-service-egress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: redirect-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: url-service
+      ports:
+        - port: {{ .Values.urlService.port }}
+          protocol: TCP
+    - to:
+        - podSelector:
+            matchLabels:
+              app: analytics-service
+      ports:
+        - port: {{ .Values.analyticsService.port }}
+          protocol: TCP
+
+---
+# analytics-service: accept ingress from ingress-nginx and redirect-service.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -113,7 +207,30 @@ spec:
           protocol: TCP
 
 ---
-# postgres: accept traffic from url-service, analytics-service, and migration Jobs only.
+# analytics-service: allow egress to postgres only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: analytics-service-egress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: analytics-service
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+
+---
+# postgres: accept ingress from url-service, analytics-service, and migration Jobs.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -145,8 +262,53 @@ spec:
           protocol: TCP
 
 ---
-# Prometheus scraping: allow prometheus to scrape /metrics on all three services.
-# Prometheus runs in the monitoring namespace.
+# url-service migration Job: allow egress to postgres only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: url-service-migration-egress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: url-service-migration
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+
+---
+# analytics migration Job: allow egress to postgres only.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: analytics-migration-egress
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: analytics-migration
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+
+---
+# Prometheus scraping: allow ingress from monitoring namespace to all services.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -169,24 +331,4 @@ spec:
         - port: {{ .Values.redirectService.port }}
           protocol: TCP
         - port: {{ .Values.analyticsService.port }}
-          protocol: TCP
-
----
-# DNS egress: all pods need to resolve cluster-internal hostnames.
-# Without this, default-deny would break DNS and nothing would start.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-dns-egress
-  labels:
-    {{- include "url-platform.labels" . | nindent 4 }}
-spec:
-  podSelector: {}
-  policyTypes:
-    - Egress
-  egress:
-    - ports:
-        - port: 53
-          protocol: UDP
-        - port: 53
           protocol: TCP
