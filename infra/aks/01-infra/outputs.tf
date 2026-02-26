@@ -34,3 +34,8 @@ output "cluster_ca_certificate" {
 output "kube_config_command" {
   value = "az aks get-credentials -g ${azurerm_resource_group.aks.name} -n ${azurerm_kubernetes_cluster.this.name} --overwrite-existing"
 }
+
+output "oidc_issuer_url" {
+  description = "OIDC issuer URL — needed by 02-bootstrap for Workload Identity federation."
+  value       = azurerm_kubernetes_cluster.this.oidc_issuer_url
+}
