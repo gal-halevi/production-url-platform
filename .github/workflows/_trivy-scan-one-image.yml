@@ -1,0 +1,66 @@
+name: _trivy-scan-one-image
+
+on:
+  workflow_call:
+    inputs:
+      image_name:
+        required: true
+        type: string
+      context:
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: ${{ github.repository_owner }}
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image locally (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          push: false
+          load: true
+          tags: ${{ inputs.image_name }}:scan
+
+      - name: Scan for CRITICAL vulnerabilities (hard gate)
+        # Fails the job if any CRITICAL CVEs are found.
+        # CRITICAL vulnerabilities must be resolved before merge.
+        uses: aquasecurity/trivy-action@0.34.0
+        with:
+          image-ref: ${{ inputs.image_name }}:scan
+          format: table
+          exit-code: "1"
+          severity: CRITICAL
+          ignore-unfixed: true
+
+      - name: Scan for HIGH vulnerabilities (report only)
+        # Reports HIGH CVEs as SARIF to the GitHub Security tab.
+        # Does not fail the pipeline — HIGH findings are visible but non-blocking.
+        if: always()
+        uses: aquasecurity/trivy-action@0.34.0
+        with:
+          image-ref: ${{ inputs.image_name }}:scan
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "0"
+          severity: HIGH
+          ignore-unfixed: true
+
+      - name: Upload HIGH findings to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+          category: ${{ inputs.image_name }}
