@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import psycopg2
@@ -32,6 +33,9 @@ def _env_int(name: str, default: int) -> int:
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").lower()
 BODY_LIMIT_BYTES = _env_int("BODY_LIMIT_BYTES", 16 * 1024)  # 16KB
 DATABASE_URL = os.getenv("DATABASE_URL")
+APP_VERSION = os.getenv("APP_VERSION", "unknown")
+GIT_SHA = os.getenv("GIT_SHA", "unknown")
+APP_ENV = os.getenv("APP_ENV", "unknown")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,7 +123,14 @@ async def limit_body_size(request: Request, call_next):
 
 @app.get("/health")
 async def health() -> Dict[str, str]:
-    return {"status": "ok", "service": "analytics-service"}
+    return {
+        "status": "ok",
+        "service": "analytics-service",
+        "version": APP_VERSION,
+        "commit": GIT_SHA,
+        "env": APP_ENV,
+        "started_at": datetime.fromtimestamp(_started_at, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.") + f"{int((_started_at % 1) * 1000):03d}Z",
+    }
 
 
 @app.get("/ready")
