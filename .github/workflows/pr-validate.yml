@@ -6,6 +6,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  security-events: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -81,3 +82,27 @@ jobs:
       !failure() && !cancelled() &&
       needs.changes.outputs.charts_or_k8s == 'true'
     uses: ./.github/workflows/_helm-validate.yml
+
+  trivy-url-service:
+    needs: changes
+    if: ${{ needs.changes.outputs.url == 'true' }}
+    uses: ./.github/workflows/_trivy-scan-one-image.yml
+    with:
+      image_name: url-service
+      context: services/url-service
+
+  trivy-redirect-service:
+    needs: changes
+    if: ${{ needs.changes.outputs.redirect == 'true' }}
+    uses: ./.github/workflows/_trivy-scan-one-image.yml
+    with:
+      image_name: redirect-service
+      context: services/redirect-service
+
+  trivy-analytics-service:
+    needs: changes
+    if: ${{ needs.changes.outputs.analytics == 'true' }}
+    uses: ./.github/workflows/_trivy-scan-one-image.yml
+    with:
+      image_name: analytics-service
+      context: services/analytics-service
