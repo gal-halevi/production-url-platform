@@ -23,15 +23,27 @@ variable "network_state_key" {
   description = "Blob name/key of the 00-network state file (e.g., aks-network.tfstate)."
 }
 
-# app-level secrets (you created per GitHub environment too, but for AKS we need K8s Secrets)
+# app-level secrets — one credential pair per environment
 variable "postgres_user" {
-  type      = string
-  sensitive = true
+  type        = map(string)
+  sensitive   = true
+  description = "Postgres username per environment. Keys: dev, stg, prod."
+
+  validation {
+    condition     = alltrue([for k in ["dev", "stg", "prod"] : contains(keys(var.postgres_user), k)])
+    error_message = "postgres_user must contain keys: dev, stg, prod."
+  }
 }
 
 variable "postgres_password" {
-  type      = string
-  sensitive = true
+  type        = map(string)
+  sensitive   = true
+  description = "Postgres password per environment. Keys: dev, stg, prod."
+
+  validation {
+    condition     = alltrue([for k in ["dev", "stg", "prod"] : contains(keys(var.postgres_password), k)])
+    error_message = "postgres_password must contain keys: dev, stg, prod."
+  }
 }
 
 variable "gitops_repo_url" {

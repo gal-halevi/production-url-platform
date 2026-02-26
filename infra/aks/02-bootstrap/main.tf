@@ -67,10 +67,10 @@ resource "kubernetes_secret_v1" "postgres" {
   type = "Opaque"
 
   data = {
-    POSTGRES_USER          = var.postgres_user
-    POSTGRES_PASSWORD      = var.postgres_password
-    DATABASE_URL           = "postgresql://${var.postgres_user}:${var.postgres_password}@postgres:5432/url_platform_urls"
-    DATABASE_URL_ANALYTICS = "postgresql://${var.postgres_user}:${var.postgres_password}@postgres:5432/url_platform_analytics"
+    POSTGRES_USER          = var.postgres_user[each.key]
+    POSTGRES_PASSWORD      = var.postgres_password[each.key]
+    DATABASE_URL           = "postgresql://${var.postgres_user[each.key]}:${var.postgres_password[each.key]}@postgres:5432/url_platform_urls"
+    DATABASE_URL_ANALYTICS = "postgresql://${var.postgres_user[each.key]}:${var.postgres_password[each.key]}@postgres:5432/url_platform_analytics"
   }
 }
 
