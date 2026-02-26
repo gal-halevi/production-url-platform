@@ -255,6 +255,31 @@ func (s *analyticsSink) post(evt analyticsEvent) {
 	}
 }
 
+type healthResponse struct {
+	Status    string `json:"status"`
+	Service   string `json:"service"`
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	Env       string `json:"env"`
+	StartedAt string `json:"started_at"`
+}
+
+var startedAt = time.Now().UTC().Format(time.RFC3339Nano)
+
+var buildInfo = map[string]string{
+	"service": "redirect-service",
+	"version": getenvOrUnknown("APP_VERSION"),
+	"commit":  getenvOrUnknown("GIT_SHA"),
+	"env":     getenvOrUnknown("APP_ENV"),
+}
+
+func getenvOrUnknown(key string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return "unknown"
+}
+
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -279,9 +304,13 @@ func main() {
 			http.Error(w, "method_not_allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{
-			"status":  "ok",
-			"service": "redirect-service",
+		writeJSON(w, http.StatusOK, healthResponse{
+			Status:    "ok",
+			Service:   buildInfo["service"],
+			Version:   buildInfo["version"],
+			Commit:    buildInfo["commit"],
+			Env:       buildInfo["env"],
+			StartedAt: startedAt,
 		})
 	})
 

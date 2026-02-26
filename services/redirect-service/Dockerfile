@@ -18,6 +18,10 @@ COPY --from=build /out/redirect-service /redirect-service
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 ENV PORT=8080
+ARG GIT_SHA=unknown
+ARG APP_VERSION=unknown
+ENV GIT_SHA=$GIT_SHA
+ENV APP_VERSION=$APP_VERSION
 EXPOSE 8080
 
 # Note: distroless has no shell/curl, so we drop HEALTHCHECK for now.
