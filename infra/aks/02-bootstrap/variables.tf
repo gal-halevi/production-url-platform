@@ -73,3 +73,14 @@ variable "acme_email" {
   description = "Email for ACME (Let's Encrypt) account registration."
   type        = string
 }
+
+variable "key_vault_name" {
+  description = "Globally unique name for the Azure Key Vault (3-24 chars, alphanumeric and hyphens)."
+  type        = string
+}
+
+variable "key_vault_resource_group" {
+  description = "Resource group to create the Key Vault in. Defaults to the AKS resource group if empty."
+  type        = string
+  default     = ""
+}

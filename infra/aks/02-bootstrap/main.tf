@@ -55,23 +55,203 @@ resource "kubernetes_namespace_v1" "env" {
   }
 }
 
-# 2) Create postgres secret per namespace
-resource "kubernetes_secret_v1" "postgres" {
+# --------------------------------------------------------------------------
+# Data sources
+# --------------------------------------------------------------------------
+data "azurerm_client_config" "current" {}
+
+data "azurerm_resource_group" "aks" {
+  name = data.terraform_remote_state.infra.outputs.resource_group_name
+}
+
+locals {
+  kv_resource_group = var.key_vault_resource_group != "" ? var.key_vault_resource_group : data.azurerm_resource_group.aks.name
+  kv_location       = data.azurerm_resource_group.aks.location
+}
+
+# --------------------------------------------------------------------------
+# 2) Azure Key Vault
+# --------------------------------------------------------------------------
+resource "azurerm_key_vault" "this" {
+  name                = var.key_vault_name
+  location            = local.kv_location
+  resource_group_name = local.kv_resource_group
+  tenant_id           = data.azurerm_client_config.current.tenant_id
+  sku_name            = "standard"
+
+  # Purge protection is intentionally disabled so that terraform destroy
+  # can fully clean up the vault and free the name for the next apply.
+  # For a long-lived production vault this should be flipped to true.
+  purge_protection_enabled = false
+
+  # Allow the Terraform identity (CI/CD) to manage secrets during apply.
+  access_policy {
+    tenant_id = data.azurerm_client_config.current.tenant_id
+    object_id = data.azurerm_client_config.current.object_id
+
+    secret_permissions = ["Get", "List", "Set", "Delete", "Purge", "Recover"]
+  }
+}
+
+# --------------------------------------------------------------------------
+# 3) Store postgres credentials in Key Vault — one secret per env per field.
+#    Naming convention: urlplat-<env>-postgres-user / urlplat-<env>-postgres-password
+# --------------------------------------------------------------------------
+resource "azurerm_key_vault_secret" "postgres_user" {
   for_each = local.environments
 
+  name         = "urlplat-${each.key}-postgres-user"
+  value        = var.postgres_user[each.key]
+  key_vault_id = azurerm_key_vault.this.id
+}
+
+resource "azurerm_key_vault_secret" "postgres_password" {
+  for_each = local.environments
+
+  name         = "urlplat-${each.key}-postgres-password"
+  value        = var.postgres_password[each.key]
+  key_vault_id = azurerm_key_vault.this.id
+}
+
+# --------------------------------------------------------------------------
+# 4) User Assigned Managed Identity for ESO
+#    One identity cluster-wide — ESO runs once and serves all namespaces.
+# --------------------------------------------------------------------------
+resource "azurerm_user_assigned_identity" "eso" {
+  name                = "urlplat-eso-identity"
+  location            = local.kv_location
+  resource_group_name = local.kv_resource_group
+}
+
+# Grant ESO identity read access to Key Vault secrets.
+resource "azurerm_key_vault_access_policy" "eso" {
+  key_vault_id = azurerm_key_vault.this.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = azurerm_user_assigned_identity.eso.principal_id
+
+  secret_permissions = ["Get", "List"]
+}
+
+# --------------------------------------------------------------------------
+# 5) Workload Identity federation
+#    Binds the managed identity to the ESO Kubernetes service account so the
+#    ESO pod can authenticate to Azure AD without any stored credentials.
+# --------------------------------------------------------------------------
+resource "azurerm_federated_identity_credential" "eso" {
+  name      = "urlplat-eso-federation"
+  parent_id = azurerm_user_assigned_identity.eso.id
+
+  # OIDC issuer from the AKS cluster (output from 01-infra).
+  issuer = data.terraform_remote_state.infra.outputs.oidc_issuer_url
+
+  # ESO uses this service account in the external-secrets namespace.
+  subject = "system:serviceaccount:external-secrets:external-secrets"
+
+  audience = ["api://AzureADTokenExchange"]
+}
+
+# --------------------------------------------------------------------------
+# 6) Install External Secrets Operator via Helm
+# --------------------------------------------------------------------------
+resource "kubernetes_namespace_v1" "external_secrets" {
   metadata {
-    name      = "postgres-secret"
-    namespace = kubernetes_namespace_v1.env[each.key].metadata[0].name
+    name = "external-secrets"
   }
+}
 
-  type = "Opaque"
+resource "helm_release" "external_secrets" {
+  name       = "external-secrets"
+  namespace  = kubernetes_namespace_v1.external_secrets.metadata[0].name
+  repository = "https://charts.external-secrets.io"
+  chart      = "external-secrets"
+  version    = "0.14.4"
 
-  data = {
-    POSTGRES_USER          = var.postgres_user[each.key]
-    POSTGRES_PASSWORD      = var.postgres_password[each.key]
-    DATABASE_URL           = "postgresql://${var.postgres_user[each.key]}:${var.postgres_password[each.key]}@postgres:5432/url_platform_urls"
-    DATABASE_URL_ANALYTICS = "postgresql://${var.postgres_user[each.key]}:${var.postgres_password[each.key]}@postgres:5432/url_platform_analytics"
-  }
+  create_namespace = false
+
+  # Annotate the ESO service account with the managed identity client ID.
+  # This is what Workload Identity uses to bind the pod to the Azure identity.
+  set = [
+    {
+      name  = "serviceAccount.annotations.azure\\.workload\\.identity/client-id"
+      value = azurerm_user_assigned_identity.eso.client_id
+      type  = "string"
+    },
+    {
+      name  = "podLabels.azure\\.workload\\.identity/use"
+      value = "true"
+      type  = "string"
+    }
+  ]
+
+  depends_on = [
+    azurerm_federated_identity_credential.eso,
+    azurerm_key_vault_access_policy.eso,
+  ]
+}
+
+# --------------------------------------------------------------------------
+# 7) ClusterSecretStore — cluster-scoped, so it can reference the ESO
+#    service account in the external-secrets namespace from any namespace.
+#    A namespaced SecretStore cannot cross namespace boundaries.
+# --------------------------------------------------------------------------
+resource "kubectl_manifest" "cluster_secret_store" {
+  yaml_body = <<-YAML
+    apiVersion: external-secrets.io/v1beta1
+    kind: ClusterSecretStore
+    metadata:
+      name: azure-keyvault
+    spec:
+      provider:
+        azurekv:
+          authType: WorkloadIdentity
+          vaultUrl: ${azurerm_key_vault.this.vault_uri}
+          serviceAccountRef:
+            name: external-secrets
+            namespace: external-secrets
+  YAML
+
+  depends_on = [helm_release.external_secrets]
+}
+
+# --------------------------------------------------------------------------
+# 8) ExternalSecret per namespace — declares which KV secrets to sync and
+#    what Kubernetes Secret to produce (same name/keys as before so pods
+#    require zero changes).
+# --------------------------------------------------------------------------
+resource "kubectl_manifest" "external_secret" {
+  for_each = local.environments
+
+  yaml_body = <<-YAML
+    apiVersion: external-secrets.io/v1beta1
+    kind: ExternalSecret
+    metadata:
+      name: postgres-secret
+      namespace: ${local.namespace_by_env[each.key]}
+    spec:
+      refreshInterval: 5m
+      secretStoreRef:
+        name: azure-keyvault
+        kind: ClusterSecretStore
+      target:
+        name: postgres-secret
+        creationPolicy: Owner
+        template:
+          engineVersion: v2
+          data:
+            POSTGRES_USER: "{{ .postgres_user }}"
+            POSTGRES_PASSWORD: "{{ .postgres_password }}"
+            DATABASE_URL: "postgresql://{{ .postgres_user }}:{{ .postgres_password }}@postgres:5432/url_platform_urls"
+            DATABASE_URL_ANALYTICS: "postgresql://{{ .postgres_user }}:{{ .postgres_password }}@postgres:5432/url_platform_analytics"
+      data:
+        - secretKey: postgres_user
+          remoteRef:
+            key: urlplat-${each.key}-postgres-user
+        - secretKey: postgres_password
+          remoteRef:
+            key: urlplat-${each.key}-postgres-password
+  YAML
+
+  depends_on = [kubectl_manifest.cluster_secret_store]
 }
 
 # 3) Install ingress-nginx once (cluster-wide), in its own namespace
