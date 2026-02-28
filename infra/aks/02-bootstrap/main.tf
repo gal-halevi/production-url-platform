@@ -84,13 +84,6 @@ resource "azurerm_key_vault" "this" {
   # For a long-lived production vault this should be flipped to true.
   purge_protection_enabled = false
 
-  # Allow the Terraform identity (CI/CD) to manage secrets during apply.
-  access_policy {
-    tenant_id = data.azurerm_client_config.current.tenant_id
-    object_id = data.azurerm_client_config.current.object_id
-
-    secret_permissions = ["Get", "List", "Set", "Delete", "Purge", "Recover"]
-  }
 }
 
 # --------------------------------------------------------------------------
@@ -103,6 +96,11 @@ resource "azurerm_key_vault_secret" "postgres_user" {
   name         = "urlplat-${each.key}-postgres-user"
   value        = var.postgres_user[each.key]
   key_vault_id = azurerm_key_vault.this.id
+
+  # Explicit dependency ensures the Terraform identity's access policy is fully
+  # created before attempting to read/write secrets. Without this, Azure may not
+  # have propagated the policy yet and the apply fails with 403 on first run.
+  depends_on = [azurerm_key_vault_access_policy.terraform]
 }
 
 resource "azurerm_key_vault_secret" "postgres_password" {
@@ -111,6 +109,8 @@ resource "azurerm_key_vault_secret" "postgres_password" {
   name         = "urlplat-${each.key}-postgres-password"
   value        = var.postgres_password[each.key]
   key_vault_id = azurerm_key_vault.this.id
+
+  depends_on = [azurerm_key_vault_access_policy.terraform]
 }
 
 # --------------------------------------------------------------------------
@@ -121,6 +121,18 @@ resource "azurerm_user_assigned_identity" "eso" {
   name                = "urlplat-eso-identity"
   location            = local.kv_location
   resource_group_name = local.kv_resource_group
+}
+
+# Grant the Terraform identity (CI/CD) full secret management on Key Vault.
+# Kept as a separate resource (not inline) to avoid conflict with the ESO
+# access policy below — mixing inline and separate access_policy blocks
+# causes the azurerm provider to plan removal of externally-managed policies.
+resource "azurerm_key_vault_access_policy" "terraform" {
+  key_vault_id = azurerm_key_vault.this.id
+  tenant_id    = data.azurerm_client_config.current.tenant_id
+  object_id    = data.azurerm_client_config.current.object_id
+
+  secret_permissions = ["Get", "List", "Set", "Delete", "Purge", "Recover"]
 }
 
 # Grant ESO identity read access to Key Vault secrets.
