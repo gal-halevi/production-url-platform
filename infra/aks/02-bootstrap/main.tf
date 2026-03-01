@@ -317,12 +317,49 @@ resource "helm_release" "argocd" {
   version    = "9.3.7" # pin a version; upgrade intentionally later
 
   create_namespace = false
+  timeout          = 600 # ArgoCD takes longer than the 5m default on fresh installs
 
   # Keep it simple first: ClusterIP, port-forward when needed.
+  # Resource requests ensure ArgoCD gets Burstable QoS (not BestEffort),
+  # so the scheduler prioritises it and it starts reliably on fresh installs.
   values = [yamlencode({
     server = {
       service = {
         type = "ClusterIP"
+      }
+      resources = {
+        requests = { cpu = "50m", memory = "128Mi" }
+        limits   = { cpu = "500m", memory = "256Mi" }
+      }
+    }
+    repoServer = {
+      resources = {
+        requests = { cpu = "50m", memory = "128Mi" }
+        limits   = { cpu = "500m", memory = "256Mi" }
+      }
+    }
+    applicationSet = {
+      resources = {
+        requests = { cpu = "25m", memory = "64Mi" }
+        limits   = { cpu = "250m", memory = "128Mi" }
+      }
+    }
+    controller = {
+      resources = {
+        requests = { cpu = "100m", memory = "256Mi" }
+        limits   = { cpu = "500m", memory = "512Mi" }
+      }
+    }
+    redis = {
+      resources = {
+        requests = { cpu = "25m", memory = "64Mi" }
+        limits   = { cpu = "200m", memory = "128Mi" }
+      }
+    }
+    dex = {
+      resources = {
+        requests = { cpu = "10m", memory = "32Mi" }
+        limits   = { cpu = "100m", memory = "64Mi" }
       }
     }
   })]
