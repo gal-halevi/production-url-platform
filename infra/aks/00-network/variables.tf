@@ -17,3 +17,8 @@ variable "tags" {
   type        = map(string)
   description = "Tags applied to resources."
 }
+
+variable "backup_storage_account_name" {
+  type        = string
+  description = "Globally unique name for the PostgreSQL backup storage account (3-24 chars, lowercase alphanumeric only)."
+}
