@@ -55,6 +55,8 @@ analyticsService:
   databaseUrlSecret:
     name: postgres-secret
     key: DATABASE_URL_ANALYTICS
+  dbPoolMin: 2
+  dbPoolMax: 10
 
 ingress:
   enabled: true
