@@ -266,6 +266,52 @@ resource "kubectl_manifest" "external_secret" {
   depends_on = [kubectl_manifest.cluster_secret_store]
 }
 
+# --------------------------------------------------------------------------
+# 9) PostgreSQL backup — Workload Identity for the CronJob that runs pg_dump
+#    and uploads to Azure Blob Storage in the 00-network layer.
+# --------------------------------------------------------------------------
+resource "azurerm_user_assigned_identity" "postgres_backup" {
+  name                = "urlplat-postgres-backup-identity"
+  location            = local.kv_location
+  resource_group_name = local.kv_resource_group
+}
+
+# Grant the backup identity permission to write blobs to the backup container.
+resource "azurerm_role_assignment" "postgres_backup_blob_contributor" {
+  scope                = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${data.terraform_remote_state.network.outputs.ingress_public_ip_rg}/providers/Microsoft.Storage/storageAccounts/${data.terraform_remote_state.network.outputs.backup_storage_account_name}/blobServices/default/containers/${data.terraform_remote_state.network.outputs.backup_storage_container_name}"
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.postgres_backup.principal_id
+}
+
+# Bind the managed identity to the backup CronJob's service account in prod.
+resource "azurerm_federated_identity_credential" "postgres_backup" {
+  name                = "urlplat-postgres-backup-federated"
+  audience            = ["api://AzureADTokenExchange"]
+  issuer              = data.terraform_remote_state.infra.outputs.oidc_issuer_url
+  parent_id           = azurerm_user_assigned_identity.postgres_backup.id
+  subject             = "system:serviceaccount:url-platform-prod:postgres-backup"
+}
+
+# Create the service account in the prod namespace, annotated with the
+# managed identity client ID so Workload Identity can bind to it.
+resource "kubernetes_service_account_v1" "postgres_backup" {
+  metadata {
+    name      = "postgres-backup"
+    namespace = "url-platform-prod"
+    annotations = {
+      "azure.workload.identity/client-id" = azurerm_user_assigned_identity.postgres_backup.client_id
+    }
+    labels = {
+      "azure.workload.identity/use" = "true"
+    }
+  }
+
+  depends_on = [
+    azurerm_federated_identity_credential.postgres_backup,
+    kubernetes_namespace_v1.env,
+  ]
+}
+
 # 3) Install ingress-nginx once (cluster-wide), in its own namespace
 resource "kubernetes_namespace_v1" "ingress" {
   metadata {
