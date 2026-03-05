@@ -106,6 +106,16 @@ spec:
                 - pipefail
                 - -c
                 - |
+                  # Explicitly log in using the Workload Identity federated token.
+                  # az CLI does not automatically pick up the injected environment
+                  # variables — an explicit login is required.
+                  az login \
+                    --federated-token "$(cat $AZURE_FEDERATED_TOKEN_FILE)" \
+                    --service-principal \
+                    --username "$AZURE_CLIENT_ID" \
+                    --tenant "$AZURE_TENANT_ID" \
+                    --output none
+
                   echo "==> Uploading backups to blob storage..."
 
                   for file in /backup/*.sql.gz; do
