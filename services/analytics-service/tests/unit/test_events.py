@@ -28,6 +28,21 @@ def make_mock_conn(fetchone_return=None, fetchall_return=None):
     return conn, cursor
 
 
+def mock_get_db(conn):
+    """Return a context manager that yields the given mock connection.
+
+    get_db() is now a context manager — tests must patch it with something
+    that supports `with get_db() as conn:` rather than a plain return value.
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _ctx():
+        yield conn
+
+    return _ctx
+
+
 def test_health_ok():
     r = client.get("/health")
     assert r.status_code == 200
@@ -39,20 +54,20 @@ def test_event_increments_stats():
 
     # Simulate: code not yet in DB (fetchone returns None)
     conn_get, _ = make_mock_conn(fetchone_return=None)
-    with patch("app.main.get_db", return_value=conn_get):
+    with patch("app.main.get_db", mock_get_db(conn_get)):
         r0 = client.get(f"/stats/{code}")
     assert r0.status_code == 200
     assert r0.json()["count"] == 0
 
     # Simulate: event ingestion succeeds
     conn_post, _ = make_mock_conn()
-    with patch("app.main.get_db", return_value=conn_post):
+    with patch("app.main.get_db", mock_get_db(conn_post)):
         r1 = client.post("/events", json={"code": code})
     assert r1.status_code == 202
 
     # Simulate: code now has count=1 in DB
     conn_get2, _ = make_mock_conn(fetchone_return={"count": 1})
-    with patch("app.main.get_db", return_value=conn_get2):
+    with patch("app.main.get_db", mock_get_db(conn_get2)):
         r2 = client.get(f"/stats/{code}")
     assert r2.status_code == 200
     assert r2.json()["count"] == 1

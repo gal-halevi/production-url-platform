@@ -48,19 +48,23 @@ logging.basicConfig(
 logger = logging.getLogger("analytics-service")
 
 
-def _init_pool() -> psycopg2.pool.ThreadedConnectionPool:
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL environment variable is not set")
-    logger.info("db_pool_init min=%s max=%s", DB_POOL_MIN, DB_POOL_MAX)
-    return psycopg2.pool.ThreadedConnectionPool(DB_POOL_MIN, DB_POOL_MAX, DATABASE_URL)
-
-
-# Module-level pool — initialized once at startup, shared across all requests.
-# ThreadedConnectionPool is safe for FastAPI's threaded request handling.
-_pool: psycopg2.pool.ThreadedConnectionPool = _init_pool()
-
-
 from contextlib import contextmanager
+
+# Module-level pool — initialized lazily on first request, shared across all
+# subsequent requests. Lazy init avoids RuntimeError at import time in tests
+# that mock DATABASE_URL.
+_pool: psycopg2.pool.ThreadedConnectionPool | None = None
+
+
+def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
+    global _pool
+    if _pool is None:
+        if not DATABASE_URL:
+            raise RuntimeError("DATABASE_URL environment variable is not set")
+        logger.info("db_pool_init min=%s max=%s", DB_POOL_MIN, DB_POOL_MAX)
+        _pool = psycopg2.pool.ThreadedConnectionPool(DB_POOL_MIN, DB_POOL_MAX, DATABASE_URL)
+    return _pool
+
 
 @contextmanager
 def get_db():
@@ -69,14 +73,14 @@ def get_db():
     Using a context manager ensures the connection is always returned to the
     pool even if an exception is raised mid-request.
     """
-    conn = _pool.getconn()
+    conn = _get_pool().getconn()
     try:
         yield conn
     except Exception:
         conn.rollback()
         raise
     finally:
-        _pool.putconn(conn)
+        _get_pool().putconn(conn)
 
 
 class RedirectEvent(BaseModel):
