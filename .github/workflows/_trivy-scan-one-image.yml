@@ -34,6 +34,10 @@ jobs:
           load: true
           tags: ${{ inputs.image_name }}:scan
 
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.69.3
+
       - name: Scan for CRITICAL vulnerabilities (hard gate)
         # Fails the job if any CRITICAL CVEs are found.
         # CRITICAL vulnerabilities must be resolved before merge.
@@ -44,6 +48,7 @@ jobs:
           exit-code: "1"
           severity: CRITICAL
           ignore-unfixed: true
+          skip-setup-trivy: true
 
       - name: Scan for HIGH vulnerabilities (report only)
         # Reports HIGH CVEs as SARIF to the GitHub Security tab.
@@ -57,10 +62,11 @@ jobs:
           exit-code: "0"
           severity: HIGH
           ignore-unfixed: true
+          skip-setup-trivy: true
 
       - name: Upload HIGH findings to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: ${{ inputs.image_name }}
