@@ -156,7 +156,7 @@ monitoring:
 
 backup:
   enabled: false
-  schedule: "30 10 * * *"   # daily at 10:30am UTC
+  schedule: "00 11 * * *"   # daily at 11:00am UTC
   postgresTag: "16-alpine"  # must match the postgres version in use
   azureCliTag: "2.69.0"   # pin to avoid unexpected changes
   storageAccount: ""       # set in prod values
