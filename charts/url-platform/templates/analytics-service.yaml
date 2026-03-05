@@ -8,6 +8,8 @@ data:
   PORT: {{ .Values.analyticsService.port | quote }}
   LOG_LEVEL: {{ .Values.analyticsService.logLevel | quote }}
   APP_ENV: {{ .Values.global.appEnv | quote }}
+  DB_POOL_MIN: {{ .Values.analyticsService.dbPoolMin | quote }}
+  DB_POOL_MAX: {{ .Values.analyticsService.dbPoolMax | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
