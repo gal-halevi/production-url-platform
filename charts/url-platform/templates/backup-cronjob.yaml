@@ -23,9 +23,15 @@ spec:
           serviceAccountName: postgres-backup
           restartPolicy: OnFailure
 
-          containers:
-            - name: backup
-              image: mcr.microsoft.com/azure-cli:{{ .Values.backup.azureCliTag }}
+          volumes:
+            - name: backup-data
+              emptyDir: {}
+
+          # Step 1: pg_dump both databases into the shared volume.
+          # Uses the postgres image which has pg_dump available.
+          initContainers:
+            - name: dump
+              image: postgres:{{ .Values.backup.postgresTag }}
               imagePullPolicy: IfNotPresent
 
               env:
@@ -39,10 +45,10 @@ spec:
                     secretKeyRef:
                       name: postgres-secret
                       key: POSTGRES_USER
-                - name: STORAGE_ACCOUNT
-                  value: {{ .Values.backup.storageAccount | quote }}
-                - name: CONTAINER
-                  value: {{ .Values.backup.storageContainer | quote }}
+
+              volumeMounts:
+                - name: backup-data
+                  mountPath: /backup
 
               command:
                 - /bin/bash
@@ -53,33 +59,69 @@ spec:
                   TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
                   PGHOST=postgres
 
-                  echo "==> Starting backup at ${TIMESTAMP}"
+                  echo "==> Starting dump at ${TIMESTAMP}"
 
-                  backup_db() {
+                  dump_db() {
                     local db=$1
                     local filename="${db}_${TIMESTAMP}.sql.gz"
-                    local tmpfile="/tmp/${filename}"
 
                     echo "--> Dumping ${db}..."
-                    pg_dump -h "${PGHOST}" -U "${PGUSER}" "${db}" | gzip > "${tmpfile}"
+                    pg_dump -h "${PGHOST}" -U "${PGUSER}" "${db}" | gzip > "/backup/${filename}"
+                    echo "--> ${db} dump complete: ${filename}"
+                  }
 
-                    echo "--> Uploading ${filename} to blob storage..."
+                  dump_db url_platform_urls
+                  dump_db url_platform_analytics
+
+                  echo "==> All dumps complete."
+
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
+
+          # Step 2: upload the dump files to Azure Blob Storage.
+          # Uses the azure-cli image which has az available.
+          containers:
+            - name: upload
+              image: mcr.microsoft.com/azure-cli:{{ .Values.backup.azureCliTag }}
+              imagePullPolicy: IfNotPresent
+
+              env:
+                - name: STORAGE_ACCOUNT
+                  value: {{ .Values.backup.storageAccount | quote }}
+                - name: CONTAINER
+                  value: {{ .Values.backup.storageContainer | quote }}
+
+              volumeMounts:
+                - name: backup-data
+                  mountPath: /backup
+
+              command:
+                - /bin/bash
+                - -euo
+                - pipefail
+                - -c
+                - |
+                  echo "==> Uploading backups to blob storage..."
+
+                  for file in /backup/*.sql.gz; do
+                    filename=$(basename "${file}")
+                    echo "--> Uploading ${filename}..."
                     az storage blob upload \
                       --auth-mode login \
                       --account-name "${STORAGE_ACCOUNT}" \
                       --container-name "${CONTAINER}" \
                       --name "${filename}" \
-                      --file "${tmpfile}" \
+                      --file "${file}" \
                       --overwrite
+                    echo "--> ${filename} uploaded."
+                  done
 
-                    rm -f "${tmpfile}"
-                    echo "--> ${db} backup complete."
-                  }
-
-                  backup_db {{ .Values.postgres.urlServiceDb }}
-                  backup_db {{ .Values.postgres.analyticsDb }}
-
-                  echo "==> All backups complete."
+                  echo "==> All uploads complete."
 
               resources:
                 requests:
