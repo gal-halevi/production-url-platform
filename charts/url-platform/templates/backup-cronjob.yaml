@@ -4,7 +4,6 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: postgres-backup
-  namespace: {{ .Values.namespace }}
   labels:
     {{- include "url-platform.labels" . | nindent 4 }}
 spec:
