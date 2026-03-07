@@ -21,6 +21,10 @@ images:
     repository: flyway/flyway
     tag: 12-alpine
     pullPolicy: IfNotPresent
+  frontendService:
+    repository: ghcr.io/gal-halevi/frontend-service
+    tag: main
+    pullPolicy: IfNotPresent
 
 postgres:
   urlServiceDb: url_platform_urls
@@ -58,6 +62,12 @@ analyticsService:
   dbPoolMin: 2
   dbPoolMax: 10
 
+frontendService:
+  port: 8080
+  # apiUrl is the public-facing API base URL injected at runtime into the browser.
+  # In prod this should be the full https:// URL of the api ingress host.
+  apiUrl: ""
+
 ingress:
   enabled: true
   className: nginx
@@ -74,6 +84,7 @@ ingress:
     api: api.url-platform.local
     redirect: r.url-platform.local
     analytics: analytics.url-platform.local
+    frontend: app.url-platform.local
   paths:
     redirectPrefix: /r
     statsPrefix: /stats
@@ -83,6 +94,7 @@ replicaCount:
   urlService: 1
   redirectService: 1
   analyticsService: 1
+  frontendService: 1
   postgres: 1
 
 resources:
@@ -114,6 +126,13 @@ resources:
     limits:
       cpu: 500m
       memory: 512Mi
+  frontendService:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
 
 global:
   appEnv: unknown
