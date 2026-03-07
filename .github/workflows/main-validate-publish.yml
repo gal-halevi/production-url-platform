@@ -20,6 +20,7 @@ jobs:
       url: ${{ steps.filter.outputs.url }}
       redirect: ${{ steps.filter.outputs.redirect }}
       analytics: ${{ steps.filter.outputs.analytics }}
+      frontend: ${{ steps.filter.outputs.frontend }}
       any_service: ${{ steps.filter.outputs.any_service }}
       charts_or_k8s: ${{ steps.filter.outputs.charts_or_k8s }}
       compose_affecting: ${{ steps.filter.outputs.compose_affecting }}
@@ -35,6 +36,8 @@ jobs:
               - 'services/redirect-service/**'
             analytics:
               - 'services/analytics-service/**'
+            frontend:
+              - 'services/frontend-service/**'
             any_service:
               - 'services/**'
             charts_or_k8s:
@@ -59,12 +62,18 @@ jobs:
     if: ${{ needs.changes.outputs.analytics == 'true' }}
     uses: ./.github/workflows/_unit-analytics-service.yml
 
+  unit-frontend-service:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    uses: ./.github/workflows/_unit-frontend-service.yml
+
   compose-e2e:
     needs:
       - changes
       - unit-url-service
       - unit-redirect-service
       - unit-analytics-service
+      - unit-frontend-service
     # Conditions for running compose e2e tests:
     # 1. No unit test jobs failed (!failure)
     # 2. No unit test jobs were cancelled (!cancelled)
@@ -119,15 +128,28 @@ jobs:
     secrets:
       gh_token: ${{ secrets.GITHUB_TOKEN }}
 
+  publish-frontend-service:
+    needs: [changes, compose-e2e, helm-validate]
+    if: |
+      !failure() && !cancelled() &&
+      needs.changes.outputs.frontend == 'true'
+    uses: ./.github/workflows/_publish-one-image.yml
+    with:
+      image_name: frontend-service
+      context: services/frontend-service
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
+
   update-gitops-dev:
     needs:
       - changes
       - publish-url-service
       - publish-redirect-service
       - publish-analytics-service
+      - publish-frontend-service
     if: |
       !failure() && !cancelled() &&
-      (needs.changes.outputs.url == 'true' || needs.changes.outputs.redirect == 'true' || needs.changes.outputs.analytics == 'true')
+      (needs.changes.outputs.url == 'true' || needs.changes.outputs.redirect == 'true' || needs.changes.outputs.analytics == 'true' || needs.changes.outputs.frontend == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
 
@@ -163,6 +185,10 @@ jobs:
 
           if [[ "${{ needs.changes.outputs.analytics }}" == "true" ]]; then
             yq -i ".images.analyticsService.tag = \"sha-${SHA_SHORT}\"" "$FILE"
+          fi
+
+          if [[ "${{ needs.changes.outputs.frontend }}" == "true" ]]; then
+            yq -i ".images.frontendService.tag = \"sha-${SHA_SHORT}\"" "$FILE"
           fi
 
           echo "Updated $FILE:"

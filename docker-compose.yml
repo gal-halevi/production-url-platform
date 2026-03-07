@@ -98,5 +98,18 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  frontend-service:
+    build:
+      context: services/frontend-service
+    environment:
+      # Empty — browser uses relative URLs, nginx proxies /api/* to backends.
+      # In production, API_URL is set to the full external URL via Helm values.
+      API_URL: ""
+    ports:
+      - "5173:8080"
+    depends_on:
+      - url-service
+    restart: unless-stopped
+
 volumes:
   postgres_data:
