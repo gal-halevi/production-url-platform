@@ -22,6 +22,9 @@ jobs:
       analytics: ${{ steps.filter.outputs.analytics }}
       any_service: ${{ steps.filter.outputs.any_service }}
       charts_or_k8s: ${{ steps.filter.outputs.charts_or_k8s }}
+      infra_network: ${{ steps.filter.outputs.infra_network }}
+      infra_infra: ${{ steps.filter.outputs.infra_infra }}
+      infra_bootstrap: ${{ steps.filter.outputs.infra_bootstrap }}
       compose_affecting: ${{ steps.filter.outputs.compose_affecting }}
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +43,12 @@ jobs:
             charts_or_k8s:
               - 'charts/**'
               - 'k8s/**'
+            infra_network:
+              - 'infra/aks/00-network/**'
+            infra_infra:
+              - 'infra/aks/01-infra/**'
+            infra_bootstrap:
+              - 'infra/aks/02-bootstrap/**'
             compose_affecting:
               - 'docker-compose.yml'
               - 'scripts/e2e-smoke.sh'
@@ -74,6 +83,27 @@ jobs:
       !failure() && !cancelled() &&
       (needs.changes.outputs.any_service == 'true' || needs.changes.outputs.compose_affecting == 'true')
     uses: ./.github/workflows/_compose-e2e.yml
+
+  terraform-validate-network:
+    needs: changes
+    if: needs.changes.outputs.infra_network == 'true'
+    uses: ./.github/workflows/_terraform-validate.yml
+    with:
+      working_directory: infra/aks/00-network
+
+  terraform-validate-infra:
+    needs: changes
+    if: needs.changes.outputs.infra_infra == 'true'
+    uses: ./.github/workflows/_terraform-validate.yml
+    with:
+      working_directory: infra/aks/01-infra
+
+  terraform-validate-bootstrap:
+    needs: changes
+    if: needs.changes.outputs.infra_bootstrap == 'true'
+    uses: ./.github/workflows/_terraform-validate.yml
+    with:
+      working_directory: infra/aks/02-bootstrap
 
   helm-validate:
     needs:

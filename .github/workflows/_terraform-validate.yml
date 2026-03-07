@@ -1,0 +1,42 @@
+name: _terraform-validate
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        required: true
+        type: string
+        description: "Path to the Terraform layer to validate (e.g. infra/aks/01-infra)"
+
+jobs:
+  terraform-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.61.0
+
+      - name: Terraform init (no backend)
+        # -backend=false skips remote state init — we only need provider
+        # schemas for validate and tflint to work correctly.
+        run: terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: tflint init
+        run: tflint --init
+
+      - name: tflint
+        run: tflint --format compact

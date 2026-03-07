@@ -23,3 +23,20 @@ jobs:
             charts/url-platform/migrations/postgres/init-databases.sql
       - name: Lint chart
         run: helm lint charts/url-platform
+
+      - name: Validate rendered manifests (kubeconform)
+        # Render the chart with default values and validate all manifests against
+        # the Kubernetes 1.31 schema — matching the AKS regional default.
+        # --ignore-missing-schemas allows CRDs (PrometheusRule, ServiceMonitor,
+        # ExternalSecret etc.) to pass through without errors since their schemas
+        # are not in the upstream Kubernetes schema registry.
+        # Uses the official kubeconform Docker container as recommended in the
+        # kubeconform README — helm template pipes to kubeconform via stdin.
+        run: |
+          helm template charts/url-platform | docker run --rm -i \
+            ghcr.io/yannh/kubeconform:v0.6.7 \
+            -strict \
+            -kubernetes-version 1.31.0 \
+            -ignore-missing-schemas \
+            -summary \
+            -
