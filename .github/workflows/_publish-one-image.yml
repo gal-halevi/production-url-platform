@@ -21,6 +21,10 @@ env:
   REGISTRY: ghcr.io
   OWNER: ${{ github.repository_owner }}
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest

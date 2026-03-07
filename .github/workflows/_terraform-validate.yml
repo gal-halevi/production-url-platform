@@ -8,6 +8,9 @@ on:
         type: string
         description: "Path to the Terraform layer to validate (e.g. infra/aks/01-infra)"
 
+permissions:
+  contents: read
+
 jobs:
   terraform-validate:
     runs-on: ubuntu-latest

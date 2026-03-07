@@ -3,6 +3,9 @@ name: _unit-url-service
 on:
   workflow_call: {}
 
+permissions:
+  contents: read
+
 jobs:
   unit-url-service:
     runs-on: ubuntu-latest

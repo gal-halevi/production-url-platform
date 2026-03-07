@@ -3,6 +3,9 @@ name: _unit-analytics-service
 on:
   workflow_call: {}
 
+permissions:
+  contents: read
+
 jobs:
   unit-analytics-service:
     runs-on: ubuntu-latest

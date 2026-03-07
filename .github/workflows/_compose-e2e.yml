@@ -3,6 +3,9 @@ name: _compose-e2e
 on:
   workflow_call: {}
 
+permissions:
+  contents: read
+
 jobs:
   compose-e2e:
     runs-on: ubuntu-latest
