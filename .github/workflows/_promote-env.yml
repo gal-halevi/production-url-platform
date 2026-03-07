@@ -78,16 +78,19 @@ jobs:
           URL_TAG="$(yq -r '.images.urlService.tag' "$SRC_FILE")"
           REDIRECT_TAG="$(yq -r '.images.redirectService.tag' "$SRC_FILE")"
           ANALYTICS_TAG="$(yq -r '.images.analyticsService.tag' "$SRC_FILE")"
+          FRONTEND_TAG="$(yq -r '.images.frontendService.tag' "$SRC_FILE")"
 
           echo "src_env=$SRC" >> "$GITHUB_OUTPUT"
           echo "url_tag=$URL_TAG" >> "$GITHUB_OUTPUT"
           echo "redirect_tag=$REDIRECT_TAG" >> "$GITHUB_OUTPUT"
           echo "analytics_tag=$ANALYTICS_TAG" >> "$GITHUB_OUTPUT"
+          echo "frontend_tag=$FRONTEND_TAG" >> "$GITHUB_OUTPUT"
 
           echo "Promoting from $SRC_FILE:"
-          echo "  urlService: $URL_TAG"
-          echo "  redirectService: $REDIRECT_TAG"
+          echo "  urlService:       $URL_TAG"
+          echo "  redirectService:  $REDIRECT_TAG"
           echo "  analyticsService: $ANALYTICS_TAG"
+          echo "  frontendService:  $FRONTEND_TAG"
 
       - name: Create promotion branch in GitOps repo
         id: branch
@@ -120,6 +123,7 @@ jobs:
           yq -i ".images.urlService.tag = \"${{ steps.read.outputs.url_tag }}\"" "$FILE"
           yq -i ".images.redirectService.tag = \"${{ steps.read.outputs.redirect_tag }}\"" "$FILE"
           yq -i ".images.analyticsService.tag = \"${{ steps.read.outputs.analytics_tag }}\"" "$FILE"
+          yq -i ".images.frontendService.tag = \"${{ steps.read.outputs.frontend_tag }}\"" "$FILE"
 
           echo "Updated $FILE:"
           cat "$FILE"
@@ -156,9 +160,10 @@ jobs:
           This PR promotes the currently deployed **${SRC}** image tags into **${TARGET}** by updating \`${FILE}\`.
 
           Tags:
-          - urlService: \`${{ steps.read.outputs.url_tag }}\`
-          - redirectService: \`${{ steps.read.outputs.redirect_tag }}\`
+          - urlService:       \`${{ steps.read.outputs.url_tag }}\`
+          - redirectService:  \`${{ steps.read.outputs.redirect_tag }}\`
           - analyticsService: \`${{ steps.read.outputs.analytics_tag }}\`
+          - frontendService:  \`${{ steps.read.outputs.frontend_tag }}\`
           EOF
 
           gh pr create \
