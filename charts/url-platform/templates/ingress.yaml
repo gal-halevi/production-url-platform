@@ -52,6 +52,19 @@ spec:
                 name: url-service
                 port:
                   number: {{ .Values.urlService.port }}
+
+    {{- if .Values.ingress.hosts.frontend }}
+    - host: {{ .Values.ingress.hosts.frontend | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: {{ .Values.frontendService.port }}
+    {{- end }}
     {{- else }}
     # Path-based routing (hostless). Good for kind/local only.
     - http:

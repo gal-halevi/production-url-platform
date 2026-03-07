@@ -20,6 +20,7 @@ jobs:
       url: ${{ steps.filter.outputs.url }}
       redirect: ${{ steps.filter.outputs.redirect }}
       analytics: ${{ steps.filter.outputs.analytics }}
+      frontend: ${{ steps.filter.outputs.frontend }}
       any_service: ${{ steps.filter.outputs.any_service }}
       charts_or_k8s: ${{ steps.filter.outputs.charts_or_k8s }}
       infra_network: ${{ steps.filter.outputs.infra_network }}
@@ -38,6 +39,8 @@ jobs:
               - 'services/redirect-service/**'
             analytics:
               - 'services/analytics-service/**'
+            frontend:
+              - 'services/frontend-service/**'
             any_service:
               - 'services/**'
             charts_or_k8s:
@@ -68,12 +71,18 @@ jobs:
     if: ${{ needs.changes.outputs.analytics == 'true' }}
     uses: ./.github/workflows/_unit-analytics-service.yml
 
+  unit-frontend-service:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    uses: ./.github/workflows/_unit-frontend-service.yml
+
   compose-e2e:
     needs:
       - changes
       - unit-url-service
       - unit-redirect-service
       - unit-analytics-service
+      - unit-frontend-service
     # Conditions for running compose e2e tests:
     # 1. No unit test jobs failed (!failure)
     # 2. No unit test jobs were cancelled (!cancelled)
@@ -136,3 +145,11 @@ jobs:
     with:
       image_name: analytics-service
       context: services/analytics-service
+
+  trivy-frontend-service:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    uses: ./.github/workflows/_trivy-scan-one-image.yml
+    with:
+      image_name: frontend-service
+      context: services/frontend-service

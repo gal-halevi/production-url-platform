@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-service-config
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+data:
+  API_URL: {{ .Values.frontendService.apiUrl | quote }}
+  VERSION: {{ .Values.images.frontendService.tag | quote }}
+  COMMIT: {{ .Values.images.frontendService.tag | trimPrefix "sha-" | quote }}
+  APP_ENV: {{ .Values.global.appEnv | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-service
+  labels:
+    {{- include "url-platform.labels" . | nindent 4 }}
+  annotations:
+    # ArgoCD: wave 3 — deploy alongside other application services.
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: {{ .Values.replicaCount.frontendService }}
+  selector:
+    matchLabels:
+      app: frontend-service
+  template:
+    metadata:
+      labels:
+        app: frontend-service
+        {{- include "url-platform.labels" . | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: frontend-service
+          image: "{{ .Values.images.frontendService.repository }}:{{ .Values.images.frontendService.tag }}"
+          imagePullPolicy: {{ .Values.images.frontendService.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false  # nginx writes tmp files
+            capabilities:
+              drop: ["ALL"]
+          ports:
+            - containerPort: {{ .Values.frontendService.port }}
+          envFrom:
+            - configMapRef:
+                name: frontend-service-config
+          resources:
+            {{- toYaml .Values.resources.frontendService | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.frontendService.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ .Values.frontendService.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  labels:
+    app: frontend-service
+    {{- include "url-platform.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: frontend-service
+  ports:
+    - name: http
+      port: {{ .Values.frontendService.port }}
+      targetPort: {{ .Values.frontendService.port }}
