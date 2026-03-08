@@ -492,3 +492,27 @@ resource "kubectl_manifest" "clusterissuer_letsencrypt_prod" {
 
   depends_on = [helm_release.cert_manager]
 }
+
+# Staging issuer for dev environment — same config but points to Let's Encrypt's
+# staging ACME server which has much higher rate limits. Issues untrusted certs
+# (fine for dev) but won't trigger rate limit errors on frequent destroy/apply cycles.
+resource "kubectl_manifest" "clusterissuer_letsencrypt_staging" {
+  yaml_body = <<-YAML
+    apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: letsencrypt-staging
+    spec:
+      acme:
+        email: ${var.acme_email}
+        server: https://acme-staging-v02.api.letsencrypt.org/directory
+        privateKeySecretRef:
+          name: letsencrypt-staging-account-key
+        solvers:
+          - http01:
+              ingress:
+                class: nginx
+  YAML
+
+  depends_on = [helm_release.cert_manager]
+}
