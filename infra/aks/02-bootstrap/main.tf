@@ -179,6 +179,7 @@ resource "helm_release" "external_secrets" {
   version    = "0.14.4"
 
   create_namespace = false
+  timeout          = 600 # ESO installs CRDs and a webhook — slow on fresh clusters
 
   # Annotate the ESO service account with the managed identity client ID.
   # This is what Workload Identity uses to bind the pod to the Azure identity.
@@ -327,6 +328,8 @@ resource "helm_release" "ingress_nginx" {
   chart      = "ingress-nginx"
   version    = "4.10.1"
 
+  timeout = 600 # nginx-ingress provisions an Azure LB — slow on fresh clusters
+
   values = [
     yamlencode({
       controller = {
@@ -460,6 +463,7 @@ resource "helm_release" "cert_manager" {
   version    = "v1.19.3" # pinned intentionally
 
   create_namespace = false
+  timeout          = 600 # cert-manager installs CRDs and a webhook — slow on fresh clusters
 
   values = [
     yamlencode({
