@@ -23,7 +23,7 @@ export default function App() {
         borderTop: '1px solid var(--border-subtle)',
         letterSpacing: '0.08em',
       }}>
-        URL PLATFORM // PRODUCTION
+        URL PLATFORM // {(window.__ENV__?.APP_ENV ?? 'local').toUpperCase()}
       </footer>
     </div>
   )
