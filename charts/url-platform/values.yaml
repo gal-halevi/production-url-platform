@@ -45,6 +45,8 @@ urlService:
   rateLimitMax: 60
   rateLimitWindowMs: 60000
   baseUrl: http://localhost:30000
+  # Comma-separated allowed CORS origins. Empty = no browser clients expected.
+  corsOrigins: ""
 
 redirectService:
   port: 8080
@@ -61,6 +63,8 @@ analyticsService:
     key: DATABASE_URL_ANALYTICS
   dbPoolMin: 2
   dbPoolMax: 10
+  # Comma-separated allowed CORS origins. Empty = no browser clients expected.
+  corsOrigins: ""
 
 frontendService:
   port: 8080
