@@ -11,6 +11,7 @@ export interface Config {
   rateLimitEnabled: boolean;
   rateLimitMax: number;
   rateLimitTimeWindowMs: number;
+  corsOrigins: string[];
 }
 
 function mustBeUrl(s: string): string {
@@ -42,6 +43,13 @@ export function loadConfig(): Config {
   const rateLimitMax = Number(process.env.RATE_LIMIT_MAX ?? "60");
   const rateLimitTimeWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS ?? "60000");
 
+  // Comma-separated list of allowed CORS origins, e.g. "https://app.galhalevi.dev"
+  // Empty string means no browser clients are expected (safe default).
+  const corsOrigins = (process.env.CORS_ORIGINS ?? "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+
   if (storageMode === "postgres" && !databaseUrl) {
     throw new Error("STORAGE_MODE=postgres requires DATABASE_URL");
   }
@@ -56,6 +64,7 @@ export function loadConfig(): Config {
     bodyLimitBytes,
     rateLimitEnabled,
     rateLimitMax,
-    rateLimitTimeWindowMs
+    rateLimitTimeWindowMs,
+    corsOrigins,
   };
 }
