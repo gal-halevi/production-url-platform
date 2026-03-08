@@ -25,7 +25,8 @@ ENV APP_VERSION=$APP_VERSION
 
 # Security: create non-root user with explicit UID for consistency with
 # Kubernetes securityContext runAsUser. UID 10001 matches analytics-service.
-RUN addgroup -S -g 10001 app && adduser -S -u 10001 -G app app
+RUN apk upgrade --no-cache && \
+    addgroup -S -g 10001 app && adduser -S -u 10001 -G app app
 USER app
 
 ENV NODE_ENV=production
