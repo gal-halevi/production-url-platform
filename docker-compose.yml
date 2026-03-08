@@ -103,8 +103,9 @@ services:
       context: services/frontend-service
     environment:
       # Empty — browser uses relative URLs, nginx proxies /api/* to backends.
-      # In production, API_URL is set to the full external URL via Helm values.
+      # In production, API_URL and ANALYTICS_URL are set to full external URLs via Helm values.
       API_URL: ""
+      ANALYTICS_URL: ""
     ports:
       - "5173:8080"
     depends_on:
