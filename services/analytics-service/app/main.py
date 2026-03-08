@@ -11,6 +11,7 @@ import psycopg2
 import psycopg2.extras
 import psycopg2.pool
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field, HttpUrl
@@ -37,6 +38,9 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 APP_VERSION = os.getenv("APP_VERSION", "unknown")
 GIT_SHA = os.getenv("GIT_SHA", "unknown")
 APP_ENV = os.getenv("APP_ENV", "unknown")
+# Comma-separated list of allowed CORS origins, e.g. "https://app.galhalevi.dev"
+# Empty string means no browser clients are expected (safe default).
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 DB_POOL_MIN = _env_int("DB_POOL_MIN", 2)
 DB_POOL_MAX = _env_int("DB_POOL_MAX", 10)
 
@@ -92,6 +96,14 @@ class RedirectEvent(BaseModel):
 
 app = FastAPI(title="analytics-service", version="0.1.0")
 app.add_middleware(RequestIdMiddleware)
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_methods=["GET", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Request-Id"],
+        max_age=86400,  # preflight cache: 24h
+    )
 
 Instrumentator(
     should_group_status_codes=False,

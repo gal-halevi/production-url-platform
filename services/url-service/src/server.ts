@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import type { FastifyError } from "fastify";
+import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 import { loadConfig } from "./config.js";
@@ -72,6 +73,18 @@ app.addHook("onResponse", async (req, reply) => {
   httpRequestsTotal.inc(labels);
   httpRequestDurationSeconds.observe(labels, durationSeconds);
 });
+
+// CORS — only registered when origins are explicitly configured.
+// An empty CORS_ORIGINS means no browser clients are expected (e.g. local dev without frontend).
+if (config.corsOrigins.length > 0) {
+  await app.register(cors, {
+    origin: config.corsOrigins,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "X-Request-Id"],
+    maxAge: 86400, // preflight cache: 24h
+  });
+  app.log.info({ origins: config.corsOrigins }, "CORS enabled");
+}
 
 await app.register(helmet, {
   // reasonable defaults; can tune later behind ingress/load balancer
