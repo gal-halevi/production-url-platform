@@ -16,6 +16,9 @@ sed -i "s|__API_URL_PLACEHOLDER__|${API_URL}|g" \
 sed -i "s|__ANALYTICS_URL_PLACEHOLDER__|${ANALYTICS_URL}|g" \
     /usr/share/nginx/html/index.html
 
+sed -i "s|__APP_ENV_PLACEHOLDER__|${APP_ENV}|g" \
+    /usr/share/nginx/html/index.html
+
 # Write the /health response file at startup so nginx can serve it statically.
 # VERSION, COMMIT, and APP_ENV are injected via Helm ConfigMap / docker-compose env.
 cat > /usr/share/nginx/html/health.json << HEALTH
