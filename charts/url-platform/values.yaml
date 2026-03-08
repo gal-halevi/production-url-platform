@@ -68,9 +68,12 @@ analyticsService:
 
 frontendService:
   port: 8080
-  # apiUrl is the public-facing API base URL injected at runtime into the browser.
+  # apiUrl is the public-facing url-service base URL injected at runtime into the browser.
   # In prod this should be the full https:// URL of the api ingress host.
   apiUrl: ""
+  # analyticsUrl is the public-facing analytics-service base URL injected at runtime.
+  analyticsUrl: ""
+
 
 ingress:
   enabled: true
