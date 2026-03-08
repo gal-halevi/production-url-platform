@@ -6,6 +6,7 @@ metadata:
     {{- include "url-platform.labels" . | nindent 4 }}
 data:
   API_URL: {{ .Values.frontendService.apiUrl | quote }}
+  ANALYTICS_URL: {{ .Values.frontendService.analyticsUrl | quote }}
   VERSION: {{ .Values.images.frontendService.tag | quote }}
   COMMIT: {{ .Values.images.frontendService.tag | trimPrefix "sha-" | quote }}
   APP_ENV: {{ .Values.global.appEnv | quote }}
