@@ -456,7 +456,7 @@ func withRequestLogging(next http.Handler, logf func(level, msg string, fields m
 			"path":   r.URL.Path,
 			"status": ww.status,
 			"ms":     time.Since(start).Milliseconds(),
-			"rid":    requestIDFromContext(r.Context()),
+			"request_id": requestIDFromContext(r.Context()),
 		})
 	})
 }
