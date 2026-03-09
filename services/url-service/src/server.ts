@@ -91,13 +91,14 @@ await app.register(helmet, {
   contentSecurityPolicy: false
 });
 
-if (config.rateLimitEnabled) {
-  await app.register(rateLimit, {
-    max: config.rateLimitMax,
-    timeWindow: config.rateLimitTimeWindowMs,
-    allowList: (req) => req.url === "/health" || req.url === "/metrics"
-  });
-}
+// Always register the rate limit plugin so that per-route limits (e.g. /ready)
+// are effective even when the global limit is disabled. When disabled, the global
+// max is set to Infinity — only explicit per-route limits apply.
+await app.register(rateLimit, {
+  max: config.rateLimitEnabled ? config.rateLimitMax : Infinity,
+  timeWindow: config.rateLimitTimeWindowMs,
+  allowList: (req) => req.url === "/health" || req.url === "/metrics"
+});
 
 app.get("/health", async () => {
   return { status: "ok", ...buildInfo };
@@ -106,12 +107,12 @@ app.get("/health", async () => {
 app.get(
   "/ready",
   {
+    // Per-route rate limiting for /ready protects the DB even if global
+    // rate limiting is disabled (RATE_LIMIT_ENABLED=false).
     config: {
-      // Separate, more permissive limit for /ready — generous enough for any
-      // load balancer or health checker, but prevents DB exhaustion via ping().
       rateLimit: {
         max: config.readyRateLimitMax,
-        timeWindow: config.readyRateLimitWindowMs,
+        timeWindow: config.readyRateLimitWindowMs
       }
     }
   },
