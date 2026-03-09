@@ -91,19 +91,32 @@ await app.register(helmet, {
   contentSecurityPolicy: false
 });
 
-if (config.rateLimitEnabled) {
-  await app.register(rateLimit, {
-    max: config.rateLimitMax,
-    timeWindow: config.rateLimitTimeWindowMs,
-    allowList: (req) => req.url === "/health" || req.url === "/ready" || req.url === "/metrics"
-  });
-}
+// Always register the rate limit plugin so that per-route limits (e.g. /ready)
+// are effective even when the global limit is disabled. When disabled, the global
+// max is set to Infinity — only explicit per-route limits apply.
+await app.register(rateLimit, {
+  max: config.rateLimitEnabled ? config.rateLimitMax : Infinity,
+  timeWindow: config.rateLimitTimeWindowMs,
+  allowList: (req) => req.url === "/health" || req.url === "/metrics"
+});
 
 app.get("/health", async () => {
   return { status: "ok", ...buildInfo };
 });
 
-app.get("/ready", async () => {
+app.get(
+  "/ready",
+  {
+    // Per-route rate limiting for /ready protects the DB even if global
+    // rate limiting is disabled (RATE_LIMIT_ENABLED=false).
+    config: {
+      rateLimit: {
+        max: config.readyRateLimitMax,
+        timeWindow: config.readyRateLimitWindowMs
+      }
+    }
+  },
+  async () => {
   // readiness checks: verify storage is initialized and responsive
   // for memory this is always OK; for postgres we can ping
   if (config.storageMode === "postgres") {
@@ -112,7 +125,8 @@ app.get("/ready", async () => {
     await store.ping();
   }
   return { status: "ready" };
-});
+  }
+);
 
 app.get("/metrics", async (_req, reply) => {
   try {
