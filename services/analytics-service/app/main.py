@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -50,11 +51,42 @@ RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
 RATE_LIMIT_MAX = _env_int("RATE_LIMIT_MAX", 60)
 RATE_LIMIT_WINDOW_MS = _env_int("RATE_LIMIT_WINDOW_MS", 60000)
 
-logging.basicConfig(
-    level=logging.INFO,
-    stream=sys.stdout,
-    format="%(levelname)s %(message)s",
-)
+class _JsonFormatter(logging.Formatter):
+    """Emit one JSON object per log line with a consistent field schema.
+
+    All services in the platform use the same schema so Loki can query
+    across services with a single LogQL expression.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload: Dict[str, Any] = {
+            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).strftime(
+                "%Y-%m-%dT%H:%M:%S.%f"
+            )[:-3] + "Z",
+            "level": record.levelname.lower(),
+            "service": "analytics-service",
+            "msg": record.getMessage(),
+        }
+        # Merge only explicit extra fields passed via logger.info(..., extra={...}).
+        # Exclude all standard LogRecord attributes to keep output clean.
+        _SKIP = {
+            "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
+            "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
+            "created", "msecs", "relativeCreated", "thread", "threadName",
+            "processName", "process", "taskName", "message",
+        }
+        for key, val in record.__dict__.items():
+            if key not in _SKIP and not key.startswith("_"):
+                payload[key] = val
+        if record.exc_info:
+            payload["exc_info"] = self.formatException(record.exc_info)
+        return json.dumps(payload, default=str)
+
+
+_handler = logging.StreamHandler(sys.stdout)
+_handler.setFormatter(_JsonFormatter())
+logging.root.setLevel(LOG_LEVEL.upper())
+logging.root.handlers = [_handler]
 logger = logging.getLogger("analytics-service")
 
 
@@ -71,7 +103,7 @@ def _get_pool() -> psycopg2.pool.ThreadedConnectionPool:
     if _pool is None:
         if not DATABASE_URL:
             raise RuntimeError("DATABASE_URL environment variable is not set")
-        logger.info("db_pool_init min=%s max=%s", DB_POOL_MIN, DB_POOL_MAX)
+        logger.info("db_pool_init", extra={"pool_min": DB_POOL_MIN, "pool_max": DB_POOL_MAX})
         _pool = psycopg2.pool.ThreadedConnectionPool(DB_POOL_MIN, DB_POOL_MAX, DATABASE_URL)
     return _pool
 
@@ -147,14 +179,13 @@ async def request_log(request: Request, call_next):
         return response
     finally:
         ms = int((time.perf_counter() - start) * 1000)
-        logger.info(
-            "request_id=%s method=%s path=%s status=%s ms=%s",
-            _rid(request),
-            request.method,
-            request.url.path,
-            status,
-            ms,
-        )
+        logger.info("request", extra={
+            "request_id": _rid(request),
+            "method": request.method,
+            "path": request.url.path,
+            "status": status,
+            "ms": ms,
+        })
 
 
 @app.middleware("http")
@@ -163,18 +194,16 @@ async def limit_body_size(request: Request, call_next):
     if cl is not None:
         try:
             if int(cl) > BODY_LIMIT_BYTES:
-                logger.info(
-                    "request_id=%s payload_too_large content_length=%s",
-                    _rid(request),
-                    cl,
-                )
+                logger.info("payload_too_large", extra={
+                    "request_id": _rid(request),
+                    "content_length": cl,
+                })
                 return JSONResponse(status_code=413, content={"error": "payload_too_large"})
         except ValueError:
-            logger.info(
-                "request_id=%s invalid_content_length content_length=%s",
-                _rid(request),
-                cl,
-            )
+            logger.info("invalid_content_length", extra={
+                "request_id": _rid(request),
+                "content_length": cl,
+            })
             return JSONResponse(status_code=400, content={"error": "invalid_content_length"})
     return await call_next(request)
 
@@ -201,7 +230,7 @@ async def ready() -> Dict[str, str]:
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
     except Exception as e:
-        logger.warning("readiness check failed: %s", e)
+        logger.warning("readiness_check_failed", extra={"error": str(e)})
         return JSONResponse(status_code=503, content={"status": "unavailable", "reason": "db_unreachable"})
     return {"status": "ready"}
 
@@ -223,11 +252,7 @@ async def ingest_event(evt: RedirectEvent, request: Request) -> Dict[str, Any]:
                     (evt.code,),
                 )
 
-    logger.info(
-        "request_id=%s event_accepted code=%s",
-        _rid(request),
-        evt.code,
-    )
+    logger.info("event_accepted", extra={"request_id": _rid(request), "code": evt.code})
     return {"accepted": True, "code": evt.code}
 
 
@@ -242,11 +267,7 @@ async def stats(request: Request) -> Dict[str, Any]:
             cur.execute("SELECT COUNT(*) AS total FROM analytics")
             total = cur.fetchone()["total"]
 
-    logger.info(
-        "request_id=%s stats_top tracked_codes=%s",
-        _rid(request),
-        total,
-    )
+    logger.info("stats_top", extra={"request_id": _rid(request), "tracked_codes": total})
     return {
         "uptime_seconds": int(time.time() - _started_at),
         "tracked_codes": total,
@@ -257,7 +278,7 @@ async def stats(request: Request) -> Dict[str, Any]:
 @app.get("/stats/{code}")
 async def stats_code(code: str, request: Request) -> Dict[str, Any]:
     if not (1 <= len(code) <= 64):
-        logger.info("request_id=%s invalid_code code=%s", _rid(request), code)
+        logger.info("invalid_code", extra={"request_id": _rid(request), "code": code})
         return JSONResponse(status_code=400, content={"error": "invalid_code"})
 
     with get_db() as conn:
@@ -266,13 +287,13 @@ async def stats_code(code: str, request: Request) -> Dict[str, Any]:
             row = cur.fetchone()
 
     count = int(row["count"]) if row else 0
-    logger.info("request_id=%s stats_code code=%s count=%s", _rid(request), code, count)
+    logger.info("stats_code", extra={"request_id": _rid(request), "code": code, "count": count})
     return {"code": code, "count": count}
 
 
 @app.exception_handler(Exception)
 async def handle_unexpected(request: Request, exc: Exception):
-    logger.exception("request_id=%s unhandled_error", _rid(request))
+    logger.exception("unhandled_error", extra={"request_id": _rid(request)})
 
     if LOG_LEVEL in ("debug", "trace"):
         return JSONResponse(status_code=500, content={"error": "internal_error", "detail": str(exc)})

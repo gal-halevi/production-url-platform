@@ -34,7 +34,22 @@ const buildInfo = {
 
 const app = Fastify({
   logger: {
-    level: config.logLevel
+    level: config.logLevel,
+    // Consistent JSON schema across all platform services for Loki queries.
+    // Pino defaults: "time" (epoch ms), "reqId" — we normalise to match the
+    // platform schema: ISO8601 "timestamp", "request_id", top-level "service".
+    timestamp: () => `,"timestamp":"${new Date().toISOString().replace(/(\.\d{3})Z$/, (_, ms) => ms + 'Z')}"`,
+    formatters: {
+      level: (label) => ({ level: label }),
+      log: (obj) => {
+        const { reqId, ...rest } = obj as any;
+        return {
+          service: "url-service",
+          ...(reqId !== undefined ? { request_id: reqId } : {}),
+          ...rest,
+        };
+      },
+    },
   },
   bodyLimit: config.bodyLimitBytes,
   trustProxy: true,
