@@ -15,6 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field, HttpUrl
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from app.request_id import RequestIdMiddleware
 
@@ -43,6 +46,9 @@ APP_ENV = os.getenv("APP_ENV", "unknown")
 CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
 DB_POOL_MIN = _env_int("DB_POOL_MIN", 2)
 DB_POOL_MAX = _env_int("DB_POOL_MAX", 10)
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() == "true"
+RATE_LIMIT_MAX = _env_int("RATE_LIMIT_MAX", 60)
+RATE_LIMIT_WINDOW_MS = _env_int("RATE_LIMIT_WINDOW_MS", 60000)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -96,6 +102,19 @@ class RedirectEvent(BaseModel):
 
 app = FastAPI(title="analytics-service", version="0.1.0")
 app.add_middleware(RequestIdMiddleware)
+
+# Rate limiter — keyed by real client IP from X-Forwarded-For (set by ingress-nginx).
+# Disabled when RATE_LIMIT_ENABLED=false (e.g. local dev or smoke tests).
+# slowapi uses the `limits` library which only supports second/minute/hour/day granularity.
+# RATE_LIMIT_WINDOW_MS is converted to seconds (rounded up) to stay consistent with
+# the url-service env var naming convention while satisfying the limits library.
+_window_seconds = max(1, (RATE_LIMIT_WINDOW_MS + 999) // 1000)
+_rate_limit = f"{RATE_LIMIT_MAX} per {_window_seconds} second" if RATE_LIMIT_ENABLED else "999999 per second"
+limiter = Limiter(key_func=get_remote_address, default_limits=[_rate_limit])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+from slowapi.middleware import SlowAPIMiddleware  # noqa: E402
+app.add_middleware(SlowAPIMiddleware)
 if CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -161,6 +180,7 @@ async def limit_body_size(request: Request, call_next):
 
 
 @app.get("/health")
+@limiter.exempt
 async def health() -> Dict[str, str]:
     return {
         "status": "ok",
@@ -173,6 +193,7 @@ async def health() -> Dict[str, str]:
 
 
 @app.get("/ready")
+@limiter.exempt
 async def ready() -> Dict[str, str]:
     # Verify DB connectivity - pod should not receive traffic if DB is unreachable
     try:
