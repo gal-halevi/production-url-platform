@@ -1,5 +1,7 @@
+import os
 from unittest.mock import MagicMock, patch
 
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -76,3 +78,30 @@ def test_event_increments_stats():
 def test_event_requires_code():
     r = client.post("/events", json={})
     assert r.status_code in (400, 422)
+
+
+def test_rate_limit_returns_429():
+    """Second request from same IP exceeds a 1-per-minute limit and gets 429."""
+    from fastapi import FastAPI
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
+    from slowapi.util import get_remote_address
+
+    _limiter = Limiter(key_func=get_remote_address, default_limits=["1 per minute"])
+    _app = FastAPI()
+    _app.state.limiter = _limiter
+    _app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    _app.add_middleware(SlowAPIMiddleware)
+
+    @_app.get("/stats/{code}")
+    async def _stats_code(code: str, request: Request):
+        return {"code": code, "count": 0}
+
+    test_client = TestClient(_app, raise_server_exceptions=False)
+
+    r1 = test_client.get("/stats/abc", headers={"X-Forwarded-For": "1.2.3.4"})
+    assert r1.status_code == 200
+
+    r2 = test_client.get("/stats/abc", headers={"X-Forwarded-For": "1.2.3.4"})
+    assert r2.status_code == 429

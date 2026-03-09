@@ -89,6 +89,9 @@ services:
       PORT: "8000"
       LOG_LEVEL: "info"
       DATABASE_URL: "postgresql://url_platform:url_platform@postgres:5432/url_platform_analytics"
+      RATE_LIMIT_ENABLED: "false"
+      RATE_LIMIT_MAX: "60"
+      RATE_LIMIT_WINDOW_MS: "60000"
     ports:
       - "8000:8000"
     depends_on:

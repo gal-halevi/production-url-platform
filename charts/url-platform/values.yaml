@@ -65,6 +65,9 @@ analyticsService:
     key: DATABASE_URL_ANALYTICS
   dbPoolMin: 2
   dbPoolMax: 10
+  rateLimitEnabled: true
+  rateLimitMax: 60
+  rateLimitWindowMs: 60000
   # Comma-separated allowed CORS origins. Empty = no browser clients expected.
   corsOrigins: ""
 

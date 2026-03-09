@@ -3,3 +3,4 @@ uvicorn[standard]==0.32.1
 pydantic==2.10.3
 prometheus-fastapi-instrumentator==7.1.0
 psycopg2-binary==2.9.10
+slowapi==0.1.9

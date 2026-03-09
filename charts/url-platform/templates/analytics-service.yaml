@@ -11,6 +11,9 @@ data:
   DB_POOL_MIN: {{ .Values.analyticsService.dbPoolMin | quote }}
   DB_POOL_MAX: {{ .Values.analyticsService.dbPoolMax | quote }}
   CORS_ORIGINS: {{ .Values.analyticsService.corsOrigins | quote }}
+  RATE_LIMIT_ENABLED: {{ .Values.analyticsService.rateLimitEnabled | quote }}
+  RATE_LIMIT_MAX: {{ .Values.analyticsService.rateLimitMax | quote }}
+  RATE_LIMIT_WINDOW_MS: {{ .Values.analyticsService.rateLimitWindowMs | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
