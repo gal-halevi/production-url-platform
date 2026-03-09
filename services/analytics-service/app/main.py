@@ -74,6 +74,8 @@ class _JsonFormatter(logging.Formatter):
             "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
             "created", "msecs", "relativeCreated", "thread", "threadName",
             "processName", "process", "taskName", "message",
+            # Uvicorn attaches an ANSI-colored variant of the message — drop it.
+            "color_message",
         }
         for key, val in record.__dict__.items():
             if key not in _SKIP and not key.startswith("_"):
