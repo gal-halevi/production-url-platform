@@ -44,6 +44,8 @@ urlService:
   rateLimitEnabled: true
   rateLimitMax: 60
   rateLimitWindowMs: 60000
+  readyRateLimitMax: 60
+  readyRateLimitWindowMs: 60000
   baseUrl: http://localhost:30000
   # Comma-separated allowed CORS origins. Empty = no browser clients expected.
   corsOrigins: ""

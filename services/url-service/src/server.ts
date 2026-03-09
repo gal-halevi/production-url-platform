@@ -95,7 +95,7 @@ if (config.rateLimitEnabled) {
   await app.register(rateLimit, {
     max: config.rateLimitMax,
     timeWindow: config.rateLimitTimeWindowMs,
-    allowList: (req) => req.url === "/health" || req.url === "/ready" || req.url === "/metrics"
+    allowList: (req) => req.url === "/health" || req.url === "/metrics"
   });
 }
 
@@ -103,7 +103,19 @@ app.get("/health", async () => {
   return { status: "ok", ...buildInfo };
 });
 
-app.get("/ready", async () => {
+app.get(
+  "/ready",
+  {
+    config: {
+      // Separate, more permissive limit for /ready — generous enough for any
+      // load balancer or health checker, but prevents DB exhaustion via ping().
+      rateLimit: {
+        max: config.readyRateLimitMax,
+        timeWindow: config.readyRateLimitWindowMs,
+      }
+    }
+  },
+  async () => {
   // readiness checks: verify storage is initialized and responsive
   // for memory this is always OK; for postgres we can ping
   if (config.storageMode === "postgres") {
@@ -112,7 +124,8 @@ app.get("/ready", async () => {
     await store.ping();
   }
   return { status: "ready" };
-});
+  }
+);
 
 app.get("/metrics", async (_req, reply) => {
   try {

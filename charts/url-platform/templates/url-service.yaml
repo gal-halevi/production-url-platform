@@ -13,6 +13,8 @@ data:
   RATE_LIMIT_ENABLED: {{ ternary "true" "false" .Values.urlService.rateLimitEnabled | quote }}
   RATE_LIMIT_MAX: {{ .Values.urlService.rateLimitMax | quote }}
   RATE_LIMIT_WINDOW_MS: {{ .Values.urlService.rateLimitWindowMs | quote }}
+  READY_RATE_LIMIT_MAX: {{ .Values.urlService.readyRateLimitMax | quote }}
+  READY_RATE_LIMIT_WINDOW_MS: {{ .Values.urlService.readyRateLimitWindowMs | quote }}
   BASE_URL: {{ .Values.urlService.baseUrl | quote }}
   CORS_ORIGINS: {{ .Values.urlService.corsOrigins | quote }}
   APP_ENV: {{ .Values.global.appEnv | quote }}
