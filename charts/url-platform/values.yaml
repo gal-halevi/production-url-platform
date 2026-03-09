@@ -53,7 +53,6 @@ urlService:
 redirectService:
   port: 8080
   host: 0.0.0.0
-  logJson: true
   urlServiceBaseUrl: http://url-service:3000
   analyticsBaseUrl: http://analytics-service:8000
 

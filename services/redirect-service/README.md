@@ -39,7 +39,7 @@ When a request arrives for `/r/{code}`, the service resolves the original URL fr
 
 The service is instrumented with Prometheus metrics via a middleware wrapper applied to all routes. The `/metrics` endpoint is registered directly on the mux to bypass the metrics middleware and avoid self-recording scrape requests.
 
-Structured logging is supported via `LOG_JSON=true`, emitting JSON log lines to stdout. All log lines include a `request_id` field for cross-service correlation.
+The service emits structured JSON log lines to stdout. All log lines include a `request_id` field for cross-service correlation.
 
 Metrics are scraped by Prometheus via a `ServiceMonitor` in Kubernetes.
 
@@ -59,7 +59,6 @@ If the queue is full, the event is dropped and a log line is emitted. This desig
 |---|---|---|
 | `PORT` | `8080` | Listening port |
 | `HOST` | `0.0.0.0` | Listening address |
-| `LOG_JSON` | `false` | Emit structured JSON logs |
 | `URL_SERVICE_BASE_URL` | `http://url-service:3000` | Base URL for url-service resolve calls |
 | `ANALYTICS_SERVICE_BASE_URL` | `http://analytics-service:8000` | Base URL for analytics event delivery |
 | `ANALYTICS_TIMEOUT_MS` | `300` | Timeout for analytics POST requests (ms) |

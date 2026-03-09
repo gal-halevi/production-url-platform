@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,8 +24,6 @@ type Config struct {
 	Host    string
 	Port    int
 	BaseURL string
-	LogJSON bool
-
 	AnalyticsBaseURL  string
 	AnalyticsTimeout  time.Duration
 	AnalyticsQueueLen int
@@ -42,8 +40,6 @@ func loadConfig() (Config, error) {
 
 	// Base URL for url-service resolve endpoint.
 	baseURL := getenv("URL_SERVICE_BASE_URL", "http://url-service:3000")
-
-	logJSON := getenv("LOG_JSON", "false") == "true"
 
 	analyticsBase := getenv("ANALYTICS_SERVICE_BASE_URL", "http://analytics-service:8000")
 
@@ -63,8 +59,6 @@ func loadConfig() (Config, error) {
 		Host:    host,
 		Port:    port,
 		BaseURL:  baseURL,
-		LogJSON:  logJSON,
-
 		AnalyticsBaseURL:  analyticsBase,
 		AnalyticsTimeout:  time.Duration(tms) * time.Millisecond,
 		AnalyticsQueueLen: ql,
@@ -131,33 +125,22 @@ func resolveLongURL(client *http.Client, base string, code string, requestID str
 	return rr.LongURL, resp.StatusCode, nil
 }
 
-type logLine struct {
-	Level     string                 `json:"level"`
-	Msg       string                 `json:"msg"`
-	Timestamp string                 `json:"ts"`
-	Fields    map[string]interface{} `json:"fields,omitempty"`
-}
-
-func logger(cfg Config) func(level, msg string, fields map[string]interface{}) {
-	if !cfg.LogJSON {
-		return func(level, msg string, fields map[string]interface{}) {
-			if len(fields) == 0 {
-				log.Printf("[%s] %s", level, msg)
-				return
-			}
-			log.Printf("[%s] %s %v", level, msg, fields)
-		}
-	}
-
+// logf emits a single JSON line to stdout.
+// Schema is consistent across all platform services so Loki can query
+// across services with a single LogQL expression.
+func logger(_ Config) func(level, msg string, fields map[string]interface{}) {
 	return func(level, msg string, fields map[string]interface{}) {
-		ll := logLine{
-			Level:     level,
-			Msg:       msg,
-			Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
-			Fields:    fields,
+		payload := map[string]interface{}{
+			"timestamp": time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+			"level":     level,
+			"service":   "redirect-service",
+			"msg":       msg,
 		}
-		b, _ := json.Marshal(ll)
-		log.Print(string(b))
+		for k, v := range fields {
+			payload[k] = v
+		}
+		b, _ := json.Marshal(payload)
+		fmt.Fprintln(os.Stdout, string(b))
 	}
 }
 
@@ -227,7 +210,7 @@ func (s *analyticsSink) post(evt analyticsEvent) {
 	body, _ := json.Marshal(evt)
 	req, err := http.NewRequest(http.MethodPost, s.baseURL+"/events", bytes.NewReader(body))
 	if err != nil {
-		s.logf("error", "analytics request build failed", map[string]interface{}{"err": err.Error(), "rid": evt.RequestID})
+		s.logf("error", "analytics request build failed", map[string]interface{}{"err": err.Error(), "request_id": evt.RequestID})
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -240,7 +223,7 @@ func (s *analyticsSink) post(evt analyticsEvent) {
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		s.logf("error", "analytics post failed", map[string]interface{}{"err": err.Error(), "rid": evt.RequestID})
+		s.logf("error", "analytics post failed", map[string]interface{}{"err": err.Error(), "request_id": evt.RequestID})
 		return
 	}
 	defer resp.Body.Close()
@@ -250,7 +233,7 @@ func (s *analyticsSink) post(evt analyticsEvent) {
 		s.logf("error", "analytics non-2xx", map[string]interface{}{
 			"status": resp.StatusCode,
 			"body":   strings.TrimSpace(string(b)),
-			"rid":    evt.RequestID,
+			"request_id": evt.RequestID,
 		})
 	}
 }
@@ -283,7 +266,8 @@ func getenvOrUnknown(key string) string {
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
-		log.Fatalf("config error: %v", err)
+		fmt.Fprintf(os.Stderr, "config error: %v\n", err)
+		os.Exit(1)
 	}
 
 	logf := logger(cfg)
@@ -343,7 +327,7 @@ func main() {
 				"code":   code,
 				"status": status,
 				"err":    err.Error(),
-				"rid":    rid,
+				"request_id": rid,
 			})
 			http.Error(w, "bad_gateway", http.StatusBadGateway)
 			return
@@ -367,7 +351,7 @@ func main() {
 		if ok := sink.Enqueue(evt); !ok {
 			logf("error", "analytics queue full (event dropped)", map[string]interface{}{
 				"code": code,
-				"rid":  rid,
+				"request_id": rid,
 			})
 		}
 
@@ -375,7 +359,7 @@ func main() {
 			"code": code,
 			"to":   dest,
 			"ua":   r.UserAgent(),
-			"rid":  rid,
+			"request_id": rid,
 		})
 
 		http.Redirect(w, r, dest, http.StatusFound)
@@ -472,7 +456,7 @@ func withRequestLogging(next http.Handler, logf func(level, msg string, fields m
 			"path":   r.URL.Path,
 			"status": ww.status,
 			"ms":     time.Since(start).Milliseconds(),
-			"rid":    requestIDFromContext(r.Context()),
+			"request_id": requestIDFromContext(r.Context()),
 		})
 	})
 }

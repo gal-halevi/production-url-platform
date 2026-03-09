@@ -33,8 +33,35 @@ const buildInfo = {
 };
 
 const app = Fastify({
+  // requestIdLogLabel is a top-level Fastify option (not nested under logger).
+  // It renames reqId in ALL Pino log lines including built-in request/response
+  // logs, which bypass formatters.log.
+  requestIdLogLabel: "request_id",
   logger: {
-    level: config.logLevel
+    level: config.logLevel,
+    // Consistent JSON schema across all platform services for Loki queries.
+    // Pino defaults: "time" (epoch ms), "reqId" — we normalise to match the
+    // platform schema: ISO8601 "timestamp", "request_id", top-level "service".
+    timestamp: () => `,"timestamp":"${new Date().toISOString().replace(/(\.\d{3})Z$/, (_, ms) => ms + 'Z')}"`,
+    formatters: {
+      level: (label) => ({ level: label }),
+      // Suppress Pino's default bindings (pid, hostname) — not present in
+      // other platform services and add noise without diagnostic value in k8s
+      // where pod name/node are already available via metadata.
+      bindings: () => ({}),
+      // Flatten Fastify's built-in req:{} / res:{} wrapper objects and
+      // normalise responseTime (float) to integer ms to match other services.
+      log: (obj: Record<string, any>) => {
+        const { req, res, responseTime, service: _svc, ...rest } = obj;
+        return {
+          service: "url-service",
+          ...(req  ? { method: req.method, path: req.url }    : {}),
+          ...(res  ? { status: res.statusCode }                : {}),
+          ...(responseTime !== undefined ? { ms: Math.round(responseTime) } : {}),
+          ...rest,
+        };
+      },
+    },
   },
   bodyLimit: config.bodyLimitBytes,
   trustProxy: true,
