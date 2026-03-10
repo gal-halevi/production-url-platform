@@ -45,8 +45,9 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   default_node_pool {
-    name    = "system"
-    vm_size = var.node_vm_size
+    name                        = "system"
+    temporary_name_for_rotation = "systemtmp"
+    vm_size                     = var.node_vm_size
 
     os_disk_type    = "Managed"
     os_disk_size_gb = 30
@@ -55,6 +56,12 @@ resource "azurerm_kubernetes_cluster" "this" {
     auto_scaling_enabled = true
     min_count            = 1
     max_count            = 3
+
+    # Azure CNI defaults to 30 — too low for a cluster running platform +
+    # monitoring workloads alongside app namespaces. 60 gives comfortable
+    # headroom while staying within subnet IP capacity (/24 = 256 IPs,
+    # 3 nodes × 60 = 180 pod IPs + node IPs fits safely).
+    max_pods = 60
   }
 
   network_profile {
@@ -71,8 +78,9 @@ resource "azurerm_kubernetes_cluster" "this" {
 }
 
 resource "azurerm_kubernetes_cluster_node_pool" "apps" {
-  name                  = "apps"
-  kubernetes_cluster_id = azurerm_kubernetes_cluster.this.id
+  name                        = "apps"
+  temporary_name_for_rotation = "appstmp"
+  kubernetes_cluster_id       = azurerm_kubernetes_cluster.this.id
   vm_size               = var.node_vm_size
   mode                  = "User"
 
@@ -82,4 +90,7 @@ resource "azurerm_kubernetes_cluster_node_pool" "apps" {
   auto_scaling_enabled = true
   min_count            = 1
   max_count            = 3
+
+  # See comment on default_node_pool above.
+  max_pods = 60
 }
