@@ -35,11 +35,6 @@ variable "node_vm_size" {
   description = "Use a VM size allowed by your subscription/region."
 }
 
-variable "system_node_count" {
-  type    = number
-  default = 1
-}
-
 variable "state_resource_group" {
   type        = string
   description = "Resource group name for tfstate storage."
