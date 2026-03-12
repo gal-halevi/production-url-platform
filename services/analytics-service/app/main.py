@@ -82,7 +82,7 @@ class _JsonFormatter(logging.Formatter):
                 payload[key] = val
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
-        return json.dumps(payload, default=str)
+        return json.dumps(payload, default=str, separators=(",", ":"))
 
 
 _handler = logging.StreamHandler(sys.stdout)
