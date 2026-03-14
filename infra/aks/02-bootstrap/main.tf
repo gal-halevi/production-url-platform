@@ -516,3 +516,48 @@ resource "kubectl_manifest" "clusterissuer_letsencrypt_staging" {
 
   depends_on = [helm_release.cert_manager]
 }
+
+# --------------------------------------------------------------------------
+# 10) Tempo — Workload Identity for reading/writing trace blobs in the
+#     observability storage account provisioned in 00-network.
+# --------------------------------------------------------------------------
+resource "azurerm_user_assigned_identity" "tempo" {
+  name                = "urlplat-tempo-identity"
+  location            = local.kv_location
+  resource_group_name = local.kv_resource_group
+}
+
+# Grant Tempo identity read/write access to the tempo-traces container.
+resource "azurerm_role_assignment" "tempo_blob_contributor" {
+  scope                = "/subscriptions/${data.azurerm_client_config.current.subscription_id}/resourceGroups/${data.terraform_remote_state.network.outputs.ingress_public_ip_rg}/providers/Microsoft.Storage/storageAccounts/${data.terraform_remote_state.network.outputs.observability_storage_account_name}/blobServices/default/containers/${data.terraform_remote_state.network.outputs.tempo_storage_container_name}"
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = azurerm_user_assigned_identity.tempo.principal_id
+}
+
+# Bind the managed identity to the Tempo service account in the monitoring namespace.
+resource "azurerm_federated_identity_credential" "tempo" {
+  name      = "urlplat-tempo-federated"
+  audience  = ["api://AzureADTokenExchange"]
+  issuer    = data.terraform_remote_state.infra.outputs.oidc_issuer_url
+  parent_id = azurerm_user_assigned_identity.tempo.id
+  subject   = "system:serviceaccount:monitoring:tempo"
+}
+
+# Create the Tempo service account in the monitoring namespace, annotated
+# with the managed identity client ID for Workload Identity binding.
+resource "kubernetes_service_account_v1" "tempo" {
+  metadata {
+    name      = "tempo"
+    namespace = "monitoring"
+    annotations = {
+      "azure.workload.identity/client-id" = azurerm_user_assigned_identity.tempo.client_id
+    }
+    labels = {
+      "azure.workload.identity/use" = "true"
+    }
+  }
+
+  depends_on = [
+    azurerm_federated_identity_credential.tempo,
+  ]
+}
