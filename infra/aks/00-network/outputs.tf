@@ -19,3 +19,13 @@ output "backup_storage_container_name" {
   value       = azurerm_storage_container.postgres_backup.name
   description = "Name of the blob container holding PostgreSQL backups."
 }
+
+output "observability_storage_account_name" {
+  value       = azurerm_storage_account.observability.name
+  description = "Name of the storage account holding observability data (Tempo traces)."
+}
+
+output "tempo_storage_container_name" {
+  value       = azurerm_storage_container.tempo_traces.name
+  description = "Name of the blob container holding Tempo trace data."
+}
