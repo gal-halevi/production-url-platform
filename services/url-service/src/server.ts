@@ -33,40 +33,27 @@ const buildInfo = {
 };
 
 const app = Fastify({
-  // requestIdLogLabel is a top-level Fastify option (not nested under logger).
-  // It renames reqId in ALL Pino log lines including built-in request/response
-  // logs, which bypass formatters.log.
   requestIdLogLabel: "request_id",
   logger: {
     level: config.logLevel,
-    // Consistent JSON schema across all platform services for Loki queries.
-    // Pino defaults: "time" (epoch ms), "reqId" — we normalise to match the
-    // platform schema: ISO8601 "timestamp", "request_id", top-level "service".
     timestamp: () => `,"timestamp":"${new Date().toISOString().replace(/(\.\d{3})Z$/, (_, ms) => ms + 'Z')}"`,
     formatters: {
       level: (label) => ({ level: label }),
-      // Suppress Pino's default bindings (pid, hostname) — not present in
-      // other platform services and add noise without diagnostic value in k8s
-      // where pod name/node are already available via metadata.
       bindings: () => ({}),
-      // Flatten Fastify's built-in req:{} / res:{} wrapper objects and
-      // normalise responseTime (float) to integer ms to match other services.
       log: (obj: Record<string, any>) => {
-        const { req, res, responseTime, service: _svc, ...rest } = obj;
-        return {
-          service: "url-service",
-          ...(req  ? { method: req.method, path: req.url }    : {}),
-          ...(res  ? { status: res.statusCode }                : {}),
-          ...(responseTime !== undefined ? { ms: Math.round(responseTime) } : {}),
-          ...rest,
-        };
+        const { req: _req, res: _res, responseTime: _rt, service: _svc, ...rest } = obj;
+        return { service: "url-service", ...rest };
       },
     },
   },
+  // Disable Fastify's built-in request/response logs — we emit a single
+  // structured log line per request in the onResponse hook instead.
+  // This gives us full control over the log schema (method, path, status, ms
+  // all in one line) and ensures probe paths can be dropped by Alloy.
+  disableRequestLogging: true,
   bodyLimit: config.bodyLimitBytes,
   trustProxy: true,
   genReqId: (req) => {
-    // req.headers is IncomingMessage headers type
     return getOrCreateRequestId(req.headers as any);
   }
 });
@@ -80,11 +67,12 @@ app.addHook("onResponse", async (req, reply) => {
   const start = (req as any)._metricsStart;
   if (!start) return;
 
-  // Exclude /metrics to avoid self-referential observations.
-  if (req.url === "/metrics") return;
-
   const durationNs = Number(process.hrtime.bigint() - start);
   const durationSeconds = durationNs / 1e9;
+  const ms = Math.round(durationNs / 1e6);
+
+  // Exclude /metrics from both logging and metric observations.
+  if (req.url === "/metrics") return;
 
   const route =
     typeof (req.routeOptions as any)?.url === "string"
@@ -99,28 +87,32 @@ app.addHook("onResponse", async (req, reply) => {
 
   httpRequestsTotal.inc(labels);
   httpRequestDurationSeconds.observe(labels, durationSeconds);
+
+  // Single structured log line per request — matches the schema of
+  // redirect-service and analytics-service for consistent Loki queries.
+  app.log.info({
+    method: req.method,
+    path: req.url,
+    status: reply.statusCode,
+    ms,
+  }, "request");
 });
 
 // CORS — only registered when origins are explicitly configured.
-// An empty CORS_ORIGINS means no browser clients are expected (e.g. local dev without frontend).
 if (config.corsOrigins.length > 0) {
   await app.register(cors, {
     origin: config.corsOrigins,
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "X-Request-Id"],
-    maxAge: 86400, // preflight cache: 24h
+    maxAge: 86400,
   });
   app.log.info({ origins: config.corsOrigins }, "CORS enabled");
 }
 
 await app.register(helmet, {
-  // reasonable defaults; can tune later behind ingress/load balancer
   contentSecurityPolicy: false
 });
 
-// Always register the rate limit plugin so that per-route limits (e.g. /ready)
-// are effective even when the global limit is disabled. When disabled, the global
-// max is set to Infinity — only explicit per-route limits apply.
 await app.register(rateLimit, {
   max: config.rateLimitEnabled ? config.rateLimitMax : Infinity,
   timeWindow: config.rateLimitTimeWindowMs,
@@ -134,8 +126,6 @@ app.get("/health", async () => {
 app.get(
   "/ready",
   {
-    // Per-route rate limiting for /ready protects the DB even if global
-    // rate limiting is disabled (RATE_LIMIT_ENABLED=false).
     config: {
       rateLimit: {
         max: config.readyRateLimitMax,
@@ -144,11 +134,7 @@ app.get(
     }
   },
   async () => {
-  // readiness checks: verify storage is initialized and responsive
-  // for memory this is always OK; for postgres we can ping
   if (config.storageMode === "postgres") {
-    // simplest check by doing a trivial operation
-    // (we can add a dedicated ping method later)
     await store.ping();
   }
   return { status: "ready" };
@@ -187,15 +173,11 @@ app.post(
         },
         400: {
           type: "object",
-          properties: {
-            error: { type: "string" }
-          }
+          properties: { error: { type: "string" } }
         },
         500: {
           type: "object",
-          properties: {
-            error: { type: "string" }
-          }
+          properties: { error: { type: "string" } }
         }
       }
     }
