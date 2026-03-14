@@ -67,3 +67,29 @@ resource "azurerm_storage_management_policy" "postgres_backup_retention" {
     }
   }
 }
+
+# --------------------------------------------------------------------------
+# Observability storage — holds Tempo trace data (and Loki in future).
+# Separated from backup storage to keep lifecycle and access concerns distinct.
+# Lives in 00-network (never destroyed) so trace data survives cluster cycles.
+# --------------------------------------------------------------------------
+resource "azurerm_storage_account" "observability" {
+  name                     = var.observability_storage_account_name
+  resource_group_name      = azurerm_resource_group.network.name
+  location                 = azurerm_resource_group.network.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  access_tier              = "Hot"
+
+  lifecycle {
+    prevent_destroy = true
+  }
+
+  tags = var.tags
+}
+
+resource "azurerm_storage_container" "tempo_traces" {
+  name                  = "tempo-traces"
+  storage_account_id    = azurerm_storage_account.observability.id
+  container_access_type = "private"
+}

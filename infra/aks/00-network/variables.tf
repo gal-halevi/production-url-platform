@@ -22,3 +22,8 @@ variable "backup_storage_account_name" {
   type        = string
   description = "Globally unique name for the PostgreSQL backup storage account (3-24 chars, lowercase alphanumeric only)."
 }
+
+variable "observability_storage_account_name" {
+  type        = string
+  description = "Globally unique name for the observability storage account (3-24 chars, lowercase alphanumeric only). Holds Tempo traces."
+}
