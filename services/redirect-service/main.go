@@ -17,8 +17,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type Config struct {
@@ -399,7 +401,11 @@ func main() {
 
 	// Expose Prometheus metrics. Registered directly on the mux so it bypasses
 	// withMetrics to avoid recording observations about the scrape itself.
-	mux.Handle("/metrics", promhttp.Handler())
+	// EnableOpenMetrics is required for Prometheus to scrape and store exemplars.
+	mux.Handle("/metrics", promhttp.HandlerFor(
+		prometheus.DefaultGatherer,
+		promhttp.HandlerOpts{EnableOpenMetrics: true},
+	))
 
 	// otelhttp.NewHandler wraps the entire handler chain to create a root span
 	// for every inbound request and extract the traceparent header if present.
@@ -486,7 +492,16 @@ func withMetrics(next http.Handler) http.Handler {
 		statusStr := strconv.Itoa(ww.status)
 
 		httpRequestsTotal.WithLabelValues(r.Method, route, statusStr).Inc()
-		httpRequestDurationSeconds.WithLabelValues(r.Method, route, statusStr).Observe(duration)
+		// Attach the active trace ID as an exemplar so Grafana can link a
+		// latency spike on the dashboard directly to the corresponding Tempo trace.
+		obs := httpRequestDurationSeconds.WithLabelValues(r.Method, route, statusStr)
+		if spanCtx := trace.SpanFromContext(r.Context()).SpanContext(); spanCtx.IsValid() {
+			obs.(prometheus.ExemplarObserver).ObserveWithExemplar(
+				duration, prometheus.Labels{"trace_id": spanCtx.TraceID().String()},
+			)
+		} else {
+			obs.Observe(duration)
+		}
 	})
 }
 
