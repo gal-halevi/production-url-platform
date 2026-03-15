@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type Config struct {
@@ -162,10 +163,13 @@ type analyticsSink struct {
 	once sync.Once
 }
 
-func newAnalyticsSink(cfg Config, logf func(level, msg string, fields map[string]interface{})) *analyticsSink {
+func newAnalyticsSink(cfg Config, logf func(level, msg string, fields map[string]interface{}), transport http.RoundTripper) *analyticsSink {
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
 	return &analyticsSink{
 		baseURL: strings.TrimRight(cfg.AnalyticsBaseURL, "/"),
-		client:  &http.Client{Timeout: cfg.AnalyticsTimeout},
+		client:  &http.Client{Timeout: cfg.AnalyticsTimeout, Transport: transport},
 		logf:    logf,
 		ch:      make(chan analyticsEvent, cfg.AnalyticsQueueLen),
 	}
@@ -271,14 +275,37 @@ func main() {
 	}
 
 	logf := logger(cfg)
-	resolveClient := &http.Client{Timeout: 1500 * time.Millisecond}
 
 	// Graceful shutdown context
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Start analytics sink worker (bounded queue)
-	sink := newAnalyticsSink(cfg, logf)
+	// Initialise OTel tracing. OTEL_EXPORTER_OTLP_ENDPOINT must be set for
+	// tracing to be active — if unset the call is a no-op and all OTel API
+	// calls become no-ops, so the service runs normally without a collector.
+	shutdownTracing, err := initTracing(ctx)
+	if err != nil {
+		logf("error", "tracing init failed", map[string]interface{}{"err": err.Error()})
+		os.Exit(1)
+	}
+	defer func() {
+		if err := shutdownTracing(context.Background()); err != nil {
+			logf("error", "tracing shutdown failed", map[string]interface{}{"err": err.Error()})
+		}
+	}()
+
+	// Wrap HTTP transport with OTel instrumentation so outbound calls to
+	// url-service and analytics-service automatically inject the traceparent
+	// header and create child spans.
+	resolveClient := &http.Client{
+		Timeout:   1500 * time.Millisecond,
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}
+
+	// Start analytics sink worker (bounded queue).
+	// Pass the same OTel transport so analytics POST requests also carry
+	// the traceparent header and appear as child spans in the trace.
+	sink := newAnalyticsSink(cfg, logf, otelhttp.NewTransport(http.DefaultTransport))
 	sink.Start(ctx)
 
 	mux := http.NewServeMux()
@@ -374,10 +401,15 @@ func main() {
 	// withMetrics to avoid recording observations about the scrape itself.
 	mux.Handle("/metrics", promhttp.Handler())
 
-	handler := withRequestID(
-		withMetrics(
-			withRequestLogging(mux, logf),
+	// otelhttp.NewHandler wraps the entire handler chain to create a root span
+	// for every inbound request and extract the traceparent header if present.
+	handler := otelhttp.NewHandler(
+		withRequestID(
+			withMetrics(
+				withRequestLogging(mux, logf),
+			),
 		),
+		"redirect-service",
 	)
 
 	srv := &http.Server{
