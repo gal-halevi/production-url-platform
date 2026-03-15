@@ -543,6 +543,15 @@ resource "azurerm_federated_identity_credential" "tempo" {
   subject   = "system:serviceaccount:monitoring:tempo"
 }
 
+# The monitoring namespace is created here so the Tempo service account
+# resource below can depend on it. ArgoCD will find the namespace already
+# exists when it deploys kube-prometheus-stack — Kubernetes is idempotent.
+resource "kubernetes_namespace_v1" "monitoring" {
+  metadata {
+    name = "monitoring"
+  }
+}
+
 # Create the Tempo service account in the monitoring namespace, annotated
 # with the managed identity client ID for Workload Identity binding.
 resource "kubernetes_service_account_v1" "tempo" {
@@ -559,5 +568,6 @@ resource "kubernetes_service_account_v1" "tempo" {
 
   depends_on = [
     azurerm_federated_identity_credential.tempo,
+    kubernetes_namespace_v1.monitoring,
   ]
 }
