@@ -2,6 +2,10 @@ import client from "prom-client";
 
 export const registry = new client.Registry();
 
+// OpenMetrics format is required for Prometheus to scrape and store exemplars.
+// Cast needed: TS types enforce a literal union but the value is valid at runtime.
+(registry as any).setContentType(client.Registry.OPENMETRICS_CONTENT_TYPE);
+
 // Add default Node.js / process metrics (CPU, memory, GC, event loop, etc.)
 client.collectDefaultMetrics({ register: registry });
 

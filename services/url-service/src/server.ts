@@ -11,6 +11,7 @@ import { validateHttpUrl } from "./validate_url.js";
 import { getOrCreateRequestId } from "./request_id.js";
 import { registry } from "./metrics.js";
 import { httpRequestsTotal, httpRequestDurationSeconds } from "./metrics.js";
+import { context, trace } from "@opentelemetry/api";
 
 const config = loadConfig();
 
@@ -86,7 +87,20 @@ app.addHook("onResponse", async (req, reply) => {
   };
 
   httpRequestsTotal.inc(labels);
-  httpRequestDurationSeconds.observe(labels, durationSeconds);
+  // Attach the active trace ID as an exemplar so Grafana can link a
+  // latency spike on the dashboard directly to the corresponding Tempo trace.
+  const span = trace.getSpan(context.active());
+  const spanCtx = span?.spanContext();
+  if (spanCtx && trace.isSpanContextValid(spanCtx)) {
+    // exemplarLabels is typed as LabelValues<T> (histogram label names only),
+    // but the Prometheus OpenMetrics spec allows arbitrary string labels on exemplars.
+    // Cast to any to attach trace_id without fighting the overly strict type.
+    (httpRequestDurationSeconds as any).observe(
+      { labels, value: durationSeconds, exemplarLabels: { trace_id: spanCtx.traceId } }
+    );
+  } else {
+    httpRequestDurationSeconds.observe(labels, durationSeconds);
+  }
 
   // Single structured log line per request — matches the schema of
   // redirect-service and analytics-service for consistent Loki queries.
