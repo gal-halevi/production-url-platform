@@ -21,6 +21,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from app.request_id import RequestIdMiddleware
+from app.tracing import setup_tracing
 
 
 def _env_int(name: str, default: int) -> int:
@@ -134,7 +135,13 @@ class RedirectEvent(BaseModel):
     referrer: Optional[HttpUrl] = None
 
 
+setup_tracing()
+
 app = FastAPI(title="analytics-service", version="0.1.0")
+
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor  # noqa: E402
+FastAPIInstrumentor.instrument_app(app)
+
 app.add_middleware(RequestIdMiddleware)
 
 # Rate limiter — keyed by real client IP from X-Forwarded-For (set by ingress-nginx).
