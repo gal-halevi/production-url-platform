@@ -92,12 +92,11 @@ app.addHook("onResponse", async (req, reply) => {
   const span = trace.getSpan(context.active());
   const spanCtx = span?.spanContext();
   if (spanCtx && trace.isSpanContextValid(spanCtx)) {
-    // exemplarLabels is typed as LabelValues<T> (histogram label names only),
-    // but the Prometheus OpenMetrics spec allows arbitrary string labels on exemplars.
-    // Cast to any to attach trace_id without fighting the overly strict type.
-    (httpRequestDurationSeconds as any).observe(
-      { labels, value: durationSeconds, exemplarLabels: { trace_id: spanCtx.traceId } }
-    );
+    httpRequestDurationSeconds.observe({
+      labels,
+      value: durationSeconds,
+      exemplarLabels: { trace_id: spanCtx.traceId } as Record<string, string>,
+    });
   } else {
     httpRequestDurationSeconds.observe(labels, durationSeconds);
   }
