@@ -151,7 +151,7 @@ resources:
 global:
   appEnv: unknown
   # OpenTelemetry collector endpoint. Override to "" to disable tracing.
-  otelExporterOtlpEndpoint: "http://otel-collector.monitoring.svc.cluster.local:4317"
+  otelExporterOtlpEndpoint: "http://otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4317"
 
 monitoring:
   # List of services to create ServiceMonitors and PrometheusRules for.
