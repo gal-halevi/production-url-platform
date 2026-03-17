@@ -1,6 +1,12 @@
-import client from "prom-client";
+import client, { openMetricsContentType, type Registry, type OpenMetricsContentType } from "prom-client";
 
-export const registry = new client.Registry();
+// OpenMetrics registry is required for exemplar support on histogram metrics.
+// setContentType must be called before any metrics are registered.
+// The type cast is needed because the Registry generic defaults to PrometheusContentType
+// and setContentType is constrained to the bound type — casting to the OpenMetrics
+// variant satisfies the type checker without any runtime impact.
+export const registry = new client.Registry() as Registry<OpenMetricsContentType>;
+registry.setContentType(openMetricsContentType);
 
 // Add default Node.js / process metrics (CPU, memory, GC, event loop, etc.)
 client.collectDefaultMetrics({ register: registry });

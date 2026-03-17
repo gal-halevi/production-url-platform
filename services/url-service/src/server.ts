@@ -98,7 +98,7 @@ app.addHook("onResponse", async (req, reply) => {
       exemplarLabels: { trace_id: spanCtx.traceId } as Record<string, string>,
     });
   } else {
-    httpRequestDurationSeconds.observe({ labels, value: durationSeconds });
+    httpRequestDurationSeconds.observe(labels, durationSeconds);
   }
 
   // Single structured log line per request — matches the schema of
