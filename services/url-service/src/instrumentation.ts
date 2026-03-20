@@ -8,11 +8,26 @@
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
+import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 
 const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 const serviceName = process.env.OTEL_SERVICE_NAME ?? "url-service";
+
+// Probe and metrics paths should never generate traces — they are high-frequency
+// and have no diagnostic value. We instantiate HttpInstrumentation directly rather
+// than relying on the getNodeAutoInstrumentations config passthrough, which does
+// not reliably forward ignoreIncomingRequestHook in all versions.
+const PROBE_PATHS = new Set(["/health", "/ready", "/metrics"]);
+
+const httpInstrumentation = new HttpInstrumentation({
+  ignoreIncomingRequestHook: (req) => {
+    const rawUrl: string = (req as any).url ?? "";
+    const path = rawUrl.split("?")[0];
+    return PROBE_PATHS.has(path);
+  },
+});
 
 const sdk = new NodeSDK({
   resource: resourceFromAttributes({
@@ -26,24 +41,14 @@ const sdk = new NodeSDK({
       }
     : {}),
   instrumentations: [
+    // HttpInstrumentation is listed first and explicitly instantiated so that
+    // ignoreIncomingRequestHook is guaranteed to be applied. getNodeAutoInstrumentations
+    // is configured to disable HTTP to avoid registering a second, unfiltered instance.
+    httpInstrumentation,
     getNodeAutoInstrumentations({
-      // Disable instrumentations we don't need to keep overhead minimal.
-      // HTTP and pg (via @opentelemetry/instrumentation-pg) are the key ones.
       "@opentelemetry/instrumentation-fs": { enabled: false },
       "@opentelemetry/instrumentation-dns": { enabled: false },
-      // OTEL_NODE_EXCLUDED_URLS is not picked up when using --import;
-      // read it manually and pass it to the HTTP instrumentation.
-      "@opentelemetry/instrumentation-http": {
-        ignoreIncomingRequestHook: (req) => {
-          const excluded = (process.env.OTEL_NODE_EXCLUDED_URLS ?? "")
-            .split(",")
-            .map((p) => p.trim())
-            .filter(Boolean)
-            .map((p) => (p.startsWith("/") ? p : `/${p}`));
-          const path = (req as any).url ?? "";
-          return excluded.some((p) => path === p);
-        },
-      },
+      "@opentelemetry/instrumentation-http": { enabled: false },
     }),
   ],
 });
