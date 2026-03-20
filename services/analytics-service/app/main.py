@@ -14,7 +14,6 @@ import psycopg2.pool
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, Field, HttpUrl
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -22,6 +21,13 @@ from slowapi.util import get_remote_address
 
 from app.request_id import RequestIdMiddleware
 from app.tracing import setup_tracing
+from app.metrics import (
+    http_requests_total,
+    http_request_duration_seconds,
+    CONTENT_TYPE_LATEST,
+    generate_latest,
+    REGISTRY,
+)
 
 
 def _env_int(name: str, default: int) -> int:
@@ -165,10 +171,6 @@ if CORS_ORIGINS:
         max_age=86400,  # preflight cache: 24h
     )
 
-Instrumentator(
-    should_group_status_codes=False,
-    excluded_handlers=["/metrics"],
-).instrument(app).expose(app, endpoint="/metrics")
 
 _started_at = time.time()
 
@@ -188,10 +190,31 @@ async def request_log(request: Request, call_next):
         return response
     finally:
         ms = int((time.perf_counter() - start) * 1000)
+        path = request.url.path
+        status_str = str(status)
+
+        # Skip probe and metrics paths — avoids noise in Prometheus and Tempo.
+        excluded = {p.strip().lstrip("/") for p in
+                    os.getenv("OTEL_PYTHON_FASTAPI_EXCLUDED_URLS", "").split(",") if p.strip()}
+        if path.lstrip("/") not in excluded:
+            labels = {"method": request.method, "route": path, "status_code": status_str}
+            http_requests_total.labels(**labels).inc()
+            # Attach active trace ID as exemplar for Grafana → Tempo linking.
+            from opentelemetry import trace as _trace  # noqa: PLC0415
+            span = _trace.get_current_span()
+            span_ctx = span.get_span_context() if span else None
+            duration = time.perf_counter() - start
+            if span_ctx and span_ctx.is_valid:
+                http_request_duration_seconds.labels(**labels).observe(
+                    duration, exemplar={"trace_id": format(span_ctx.trace_id, "032x")}
+                )
+            else:
+                http_request_duration_seconds.labels(**labels).observe(duration)
+
         logger.info("request", extra={
             "request_id": _rid(request),
             "method": request.method,
-            "path": request.url.path,
+            "path": path,
             "status": status,
             "ms": ms,
         })
@@ -215,6 +238,17 @@ async def limit_body_size(request: Request, call_next):
             })
             return JSONResponse(status_code=400, content={"error": "invalid_content_length"})
     return await call_next(request)
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics_endpoint():
+    """Expose Prometheus metrics in OpenMetrics format.
+
+    OpenMetrics format is required for Prometheus to scrape and store
+    exemplars attached to histogram observations.
+    """
+    from fastapi.responses import Response  # noqa: PLC0415
+    return Response(generate_latest(REGISTRY), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health")
