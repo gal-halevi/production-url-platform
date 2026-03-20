@@ -31,6 +31,19 @@ const sdk = new NodeSDK({
       // HTTP and pg (via @opentelemetry/instrumentation-pg) are the key ones.
       "@opentelemetry/instrumentation-fs": { enabled: false },
       "@opentelemetry/instrumentation-dns": { enabled: false },
+      // OTEL_NODE_EXCLUDED_URLS is not picked up when using --import;
+      // read it manually and pass it to the HTTP instrumentation.
+      "@opentelemetry/instrumentation-http": {
+        ignoreIncomingRequestHook: (req) => {
+          const excluded = (process.env.OTEL_NODE_EXCLUDED_URLS ?? "")
+            .split(",")
+            .map((p) => p.trim())
+            .filter(Boolean)
+            .map((p) => (p.startsWith("/") ? p : `/${p}`));
+          const path = (req as any).url ?? "";
+          return excluded.some((p) => path === p);
+        },
+      },
     }),
   ],
 });
