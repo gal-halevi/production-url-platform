@@ -45,7 +45,7 @@ jobs:
       - name: Scan for CRITICAL vulnerabilities (hard gate)
         # Fails the job if any CRITICAL CVEs are found.
         # CRITICAL vulnerabilities must be resolved before merge.
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ inputs.image_name }}:scan
           format: table
@@ -58,7 +58,7 @@ jobs:
         # Reports HIGH CVEs as SARIF to the GitHub Security tab.
         # Does not fail the pipeline — HIGH findings are visible but non-blocking.
         if: always()
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ inputs.image_name }}:scan
           format: sarif
