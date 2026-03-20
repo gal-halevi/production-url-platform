@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -35,10 +36,14 @@ func initTracing(ctx context.Context) (shutdown func(context.Context) error, err
 		serviceName = "redirect-service"
 	}
 
+	// Strip http:// or https:// prefix — gRPC NewClient expects a bare
+	// host:port address, not a URL scheme.
+	grpcEndpoint := strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+
 	// Dial the OTel Collector. Using WithBlock would hang startup if the
 	// collector is temporarily unavailable — non-blocking is safer here.
 	conn, err := grpc.NewClient(
-		endpoint,
+		grpcEndpoint,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
