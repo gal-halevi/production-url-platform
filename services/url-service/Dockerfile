@@ -9,7 +9,7 @@ FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
-COPY tsconfig.json ./
+COPY tsconfig.json tsconfig.instrumentation.json ./
 COPY src ./src
 RUN npm run build
 
@@ -42,6 +42,7 @@ EXPOSE 3000
 HEALTHCHECK --interval=10s --timeout=2s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# --import loads instrumentation.js before any other module, which is
-# required for OTel auto-instrumentation to patch http, pg, etc. at startup.
-CMD ["node", "--import", "./dist/instrumentation.js", "dist/server.js"]
+# --require loads instrumentation.cjs before any other module in CJS context.
+# CJS is required for OTel auto-instrumentation hooks (ignoreIncomingRequestHook)
+# to work correctly — they are not reliably invoked under --import/ESM.
+CMD ["node", "--require", "./dist/instrumentation.cjs", "dist/server.js"]
