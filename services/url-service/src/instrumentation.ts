@@ -10,7 +10,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { ATTR_SERVICE_NAME, ATTR_URL_PATH } from "@opentelemetry/semantic-conventions";
 import { Context, Attributes, SpanKind, Link } from "@opentelemetry/api";
 import {
   Sampler,
@@ -43,7 +43,11 @@ class ProbeFilterSampler implements Sampler {
     _links: Link[]
   ): SamplingResult {
     // Drop spans for probe and metrics paths — high-frequency, no diagnostic value.
-    const target = (attributes["http.target"] ?? "") as string;
+    // Check both attribute names: http.target (old semconv) and url.path (stable
+    // semconv, ATTR_URL_PATH). The http instrumentation sets url.path on the root
+    // span unconditionally, but http.target is only present in old-semconv mode.
+    // Checking both makes the sampler robust regardless of semconvStability config.
+    const target = (attributes["http.target"] ?? attributes[ATTR_URL_PATH] ?? "") as string;
     if (target && PROBE_PATHS.has(target)) {
       return { decision: SamplingDecision.NOT_RECORD };
     }
