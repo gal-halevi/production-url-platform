@@ -4,30 +4,19 @@
 //
 // When OTEL_EXPORTER_OTLP_ENDPOINT is unset, the SDK starts with a
 // no-op tracer and no exporter — the service runs normally.
+//
+// Probe path filtering (/health, /ready, /metrics) is handled at the
+// OTel Collector level via a filter processor — this is more reliable
+// than SDK-side hooks which are affected by ESM/CJS interop issues.
 
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
-import { HttpInstrumentation } from "@opentelemetry/instrumentation-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 
 const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 const serviceName = process.env.OTEL_SERVICE_NAME ?? "url-service";
-
-// Probe and metrics paths should never generate traces — they are high-frequency
-// and have no diagnostic value. We instantiate HttpInstrumentation directly rather
-// than relying on the getNodeAutoInstrumentations config passthrough, which does
-// not reliably forward ignoreIncomingRequestHook in all versions.
-const PROBE_PATHS = new Set(["/health", "/ready", "/metrics"]);
-
-const httpInstrumentation = new HttpInstrumentation({
-  ignoreIncomingRequestHook: (req) => {
-    const rawUrl: string = (req as any).url ?? "";
-    const path = rawUrl.split("?")[0];
-    return PROBE_PATHS.has(path);
-  },
-});
 
 const sdk = new NodeSDK({
   resource: resourceFromAttributes({
@@ -41,14 +30,10 @@ const sdk = new NodeSDK({
       }
     : {}),
   instrumentations: [
-    // HttpInstrumentation is listed first and explicitly instantiated so that
-    // ignoreIncomingRequestHook is guaranteed to be applied. getNodeAutoInstrumentations
-    // is configured to disable HTTP to avoid registering a second, unfiltered instance.
-    httpInstrumentation,
     getNodeAutoInstrumentations({
+      // Disable instrumentations we don't need to keep overhead minimal.
       "@opentelemetry/instrumentation-fs": { enabled: false },
       "@opentelemetry/instrumentation-dns": { enabled: false },
-      "@opentelemetry/instrumentation-http": { enabled: false },
     }),
   ],
 });
