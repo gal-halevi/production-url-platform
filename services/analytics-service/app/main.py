@@ -193,9 +193,10 @@ async def request_log(request: Request, call_next):
         path = request.url.path
         status_str = str(status)
 
-        # Skip probe and metrics paths — avoids noise in Prometheus metrics.
-        # Hardcoded rather than env-driven: these paths never vary across environments.
-        if path not in ("/health", "/ready", "/metrics"):
+        # Skip probe and metrics paths — avoids noise in Prometheus and Tempo.
+        excluded = {p.strip().lstrip("/") for p in
+                    os.getenv("OTEL_PYTHON_FASTAPI_EXCLUDED_URLS", "").split(",") if p.strip()}
+        if path.lstrip("/") not in excluded:
             labels = {"method": request.method, "route": path, "status_code": status_str}
             http_requests_total.labels(**labels).inc()
             # Attach active trace ID as exemplar for Grafana → Tempo linking.

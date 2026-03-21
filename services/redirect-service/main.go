@@ -409,8 +409,19 @@ func main() {
 
 	// otelhttp.NewHandler wraps the entire handler chain to create a root span
 	// for every inbound request and extract the traceparent header if present.
-	// Probe path filtering (/health, /ready, /metrics) is handled at the
-	// OTel Collector level via a filter processor.
+	// WithFilter excludes paths listed in OTEL_GO_EXCLUDED_URLS (comma-separated)
+	// from span creation — consistent with OTEL_NODE_EXCLUDED_URLS and
+	// OTEL_PYTHON_FASTAPI_EXCLUDED_URLS used by the other services.
+	excludedPaths := map[string]struct{}{}
+	for _, p := range strings.Split(os.Getenv("OTEL_GO_EXCLUDED_URLS"), ",") {
+		if t := strings.TrimSpace(p); t != "" {
+			excludedPaths["/"+strings.TrimPrefix(t, "/")] = struct{}{}
+		}
+	}
+	probeFilter := otelhttp.WithFilter(func(r *http.Request) bool {
+		_, excluded := excludedPaths[r.URL.Path]
+		return !excluded
+	})
 	handler := otelhttp.NewHandler(
 		withRequestID(
 			withMetrics(
@@ -418,6 +429,7 @@ func main() {
 			),
 		),
 		"redirect-service",
+		probeFilter,
 	)
 
 	srv := &http.Server{
