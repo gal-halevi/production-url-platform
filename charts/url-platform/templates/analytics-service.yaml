@@ -15,6 +15,7 @@ data:
   RATE_LIMIT_MAX: {{ .Values.analyticsService.rateLimitMax | quote }}
   RATE_LIMIT_WINDOW_MS: {{ .Values.analyticsService.rateLimitWindowMs | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.global.otelExporterOtlpEndpoint | quote }}
+  OTEL_PYTHON_FASTAPI_EXCLUDED_URLS: {{ .Values.analyticsService.otelPythonFastapiExcludedUrls | quote }}
 ---
 apiVersion: apps/v1
 kind: Deployment
