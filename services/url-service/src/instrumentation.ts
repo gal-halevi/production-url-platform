@@ -12,7 +12,7 @@ import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentation
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { ParentBasedSampler } from "@opentelemetry/sdk-trace-base";
-import { ProbeFilterSampler } from "./probe-filter-sampler.js";
+import { ProbeFilterSampler, PROBE_PATHS } from "./probe-filter-sampler.js";
 
 const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 const serviceName = process.env.OTEL_SERVICE_NAME ?? "url-service";
@@ -21,11 +21,6 @@ const sdk = new NodeSDK({
   resource: resourceFromAttributes({
     [ATTR_SERVICE_NAME]: serviceName,
   }),
-  // ParentBasedSampler delegates root spans (no parent) to ProbeFilterSampler,
-  // which drops /health, /ready, and /metrics. All child spans created within
-  // a dropped root span are automatically suppressed by localParentNotSampled
-  // (AlwaysOff). Without this wrapper, child spans from instrumentation-fastify
-  // bypass the URL check and are exported as orphan spans.
   sampler: new ParentBasedSampler({ root: new ProbeFilterSampler() }),
   ...(endpoint
     ? {
@@ -36,9 +31,16 @@ const sdk = new NodeSDK({
     getNodeAutoInstrumentations({
       "@opentelemetry/instrumentation-fs": { enabled: false },
       "@opentelemetry/instrumentation-dns": { enabled: false },
-      // Set OTEL_SEMCONV_STABILITY_OPT_IN=http in the environment to use stable
-      // semconv attributes (url.path). The default is old semconv (http.target).
-      // ProbeFilterSampler checks both, so filtering works regardless of this setting.
+      "@opentelemetry/instrumentation-http": {
+        // Primary probe filter: suppress span creation (and all child spans, e.g.
+        // pg queries in /ready) at the instrumentation level via suppressTracing().
+        // This fires before the sampler and is more reliable for high-frequency
+        // operational paths like liveness, readiness, and metrics scrapes.
+        ignoreIncomingRequestHook: (req) => {
+          const path = (req.url ?? "").split("?")[0];
+          return PROBE_PATHS.has(path);
+        },
+      },
     }),
   ],
 });
