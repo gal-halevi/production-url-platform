@@ -10,60 +10,23 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-grpc";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import { ATTR_SERVICE_NAME, ATTR_URL_PATH } from "@opentelemetry/semantic-conventions";
-import { Context, Attributes, SpanKind, Link } from "@opentelemetry/api";
-import {
-  Sampler,
-  SamplingDecision,
-  SamplingResult,
-} from "@opentelemetry/sdk-trace-base";
+import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
+import { ParentBasedSampler } from "@opentelemetry/sdk-trace-base";
+import { ProbeFilterSampler } from "./probe-filter-sampler.js";
 
 const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 const serviceName = process.env.OTEL_SERVICE_NAME ?? "url-service";
-
-// Probe and metrics paths are excluded via a custom sampler — the correct
-// OTel abstraction for dropping spans before they are recorded or exported.
-// Using a sampler rather than ignoreIncomingRequestHook works regardless of
-// which instrumentation creates the span (http, fastify, etc.).
-const PROBE_PATHS = new Set(
-  (process.env.OTEL_NODE_EXCLUDED_URLS ?? "health,ready,metrics")
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .map((p) => (p.startsWith("/") ? p : `/${p}`))
-);
-
-class ProbeFilterSampler implements Sampler {
-  shouldSample(
-    _ctx: Context,
-    _traceId: string,
-    _spanName: string,
-    _spanKind: SpanKind,
-    attributes: Attributes,
-    _links: Link[]
-  ): SamplingResult {
-    // Drop spans for probe and metrics paths — high-frequency, no diagnostic value.
-    // Check both attribute names: http.target (old semconv) and url.path (stable
-    // semconv, ATTR_URL_PATH). The http instrumentation sets url.path on the root
-    // span unconditionally, but http.target is only present in old-semconv mode.
-    // Checking both makes the sampler robust regardless of semconvStability config.
-    const target = (attributes["http.target"] ?? attributes[ATTR_URL_PATH] ?? "") as string;
-    if (target && PROBE_PATHS.has(target)) {
-      return { decision: SamplingDecision.NOT_RECORD };
-    }
-    return { decision: SamplingDecision.RECORD_AND_SAMPLED };
-  }
-
-  toString(): string {
-    return "ProbeFilterSampler";
-  }
-}
 
 const sdk = new NodeSDK({
   resource: resourceFromAttributes({
     [ATTR_SERVICE_NAME]: serviceName,
   }),
-  sampler: new ProbeFilterSampler(),
+  // ParentBasedSampler delegates root spans (no parent) to ProbeFilterSampler,
+  // which drops /health, /ready, and /metrics. All child spans created within
+  // a dropped root span are automatically suppressed by localParentNotSampled
+  // (AlwaysOff). Without this wrapper, child spans from instrumentation-fastify
+  // bypass the URL check and are exported as orphan spans.
+  sampler: new ParentBasedSampler({ root: new ProbeFilterSampler() }),
   ...(endpoint
     ? {
         traceExporter: new OTLPTraceExporter(),
@@ -73,6 +36,9 @@ const sdk = new NodeSDK({
     getNodeAutoInstrumentations({
       "@opentelemetry/instrumentation-fs": { enabled: false },
       "@opentelemetry/instrumentation-dns": { enabled: false },
+      // Set OTEL_SEMCONV_STABILITY_OPT_IN=http in the environment to use stable
+      // semconv attributes (url.path). The default is old semconv (http.target).
+      // ProbeFilterSampler checks both, so filtering works regardless of this setting.
     }),
   ],
 });
