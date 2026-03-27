@@ -5,5 +5,5 @@
     "moduleResolution": "Node",
     "outDir": "dist/.cjs"
   },
-  "include": ["src/instrumentation.ts", "src/probe-filter-sampler.ts"]
+  "include": ["src/instrumentation.ts", "src/probe-filter-sampler.ts", "src/probe-filter-processor.ts"]
 }
