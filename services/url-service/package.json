@@ -6,7 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "npm run build && npm start",
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.instrumentation.json && mv dist/.cjs/instrumentation.js dist/instrumentation.cjs && mv dist/.cjs/probe-filter-sampler.js dist/probe-filter-sampler.cjs && mv dist/.cjs/probe-filter-processor.js dist/probe-filter-processor.cjs && rm -rf dist/.cjs && node -e \"const fs=require('fs');['dist/instrumentation.cjs','dist/probe-filter-processor.cjs'].forEach(f=>{let s=fs.readFileSync(f,'utf8');s=s.replace(/\\.\\.\\/probe-filter-sampler\\.js/g,'./probe-filter-sampler.cjs');s=s.replace(/\\.\\.\\/probe-filter-processor\\.js/g,'./probe-filter-processor.cjs');s=s.replace(/\\.\\/probe-filter-sampler\\.js/g,'./probe-filter-sampler.cjs');s=s.replace(/\\.\\/probe-filter-processor\\.js/g,'./probe-filter-processor.cjs');fs.writeFileSync(f,s)})\"",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.instrumentation.json && mv dist/.cjs/instrumentation.js dist/instrumentation.cjs && rm -rf dist/.cjs",
     "start": "node dist/server.js",
     "lint": "eslint .",
     "test": "vitest run",

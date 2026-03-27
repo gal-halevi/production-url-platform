@@ -19,6 +19,7 @@ data:
   CORS_ORIGINS: {{ .Values.urlService.corsOrigins | quote }}
   APP_ENV: {{ .Values.global.appEnv | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.global.otelExporterOtlpEndpoint | quote }}
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment={{ .Values.global.appEnv }}
   OTEL_NODE_EXCLUDED_URLS: {{ .Values.urlService.otelNodeExcludedUrls | quote }}
 ---
 apiVersion: apps/v1
