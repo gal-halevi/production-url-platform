@@ -11,6 +11,7 @@ data:
   ANALYTICS_SERVICE_BASE_URL: {{ .Values.redirectService.analyticsBaseUrl | quote }}
   APP_ENV: {{ .Values.global.appEnv | quote }}
   OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.global.otelExporterOtlpEndpoint | quote }}
+  OTEL_RESOURCE_ATTRIBUTES: deployment.environment={{ .Values.global.appEnv }}
   OTEL_GO_EXCLUDED_URLS: {{ .Values.redirectService.otelGoExcludedUrls | quote }}
 ---
 apiVersion: apps/v1
