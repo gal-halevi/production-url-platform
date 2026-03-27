@@ -1,14 +1,12 @@
-// ProbeFilterSampler — drops root HTTP spans whose url.path matches a probe path.
+// ProbeFilterSampler — drops root HTTP spans whose path matches a probe endpoint.
 //
-// This sampler must be wrapped in ParentBasedSampler (done in instrumentation.ts)
-// so that child spans (e.g. Fastify route spans from @opentelemetry/instrumentation-fastify)
-// automatically inherit the NOT_RECORD decision. Without the wrapper, child spans
-// are evaluated independently by this sampler and, lacking url.path attributes,
-// would pass through as orphan spans.
+// Wrapped in ParentBasedSampler (see instrumentation.ts) so child spans
+// automatically inherit the NOT_RECORD decision.
 //
-// The HTTP instrumentation is configured with semconvStability: "stable" so
-// url.path (ATTR_URL_PATH) is always present on server spans. The http.target
-// fallback is kept for belt-and-suspenders in case of indirect instrumentation.
+// Checks both url.path (stable semconv) and http.target (old semconv) because
+// the active semconv mode depends on OTEL_SEMCONV_STABILITY_OPT_IN, which
+// defaults to OLD.  In OLD mode only http.target is present on initial span
+// attributes; in STABLE mode only url.path is present.
 
 import { ATTR_URL_PATH } from "@opentelemetry/semantic-conventions";
 import { Context, Attributes, SpanKind, Link } from "@opentelemetry/api";
