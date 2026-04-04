@@ -16,9 +16,12 @@ This repository is intentionally designed as a **portfolio-quality project**, no
 - **Database schema migrations** with Flyway Jobs, run as Kubernetes Jobs at sync wave 2
 - **Per-service image publishing** to GHCR with immutable `sha-XXXXXXX` tags
 - **Automated dev promotion** on merge to `main`; stg/prod promotion via PR workflow
-- **Prometheus metrics** on all three services with cardinality-safe route normalization
+- **Prometheus metrics** on all services with cardinality-safe route normalization
 - **Grafana dashboards** for RPS, p95 latency, and top routes per service
 - **SLO-based alerting** with burn-rate rules (availability + latency) via PrometheusRules
+- **Distributed tracing** via OpenTelemetry → OTel Collector → Grafana Tempo
+- **Log aggregation** via Grafana Alloy (DaemonSet) → Loki, with structured JSON log parsing
+- **Cross-signal correlation** — traces link to logs, logs link to traces, both link to metrics in Grafana
 - **CI hardening**: scoped unit tests, Docker Compose e2e, SQL drift checks, gitops smoke tests
 - **Terraform** for AKS cluster, networking, namespaces, secrets, ingress-nginx, ArgoCD, cert-manager
 
@@ -31,8 +34,9 @@ This repository is intentionally designed as a **portfolio-quality project**, no
 | **url-service** | TypeScript / Fastify | Creates and stores short URLs, resolves short codes |
 | **redirect-service** | Go | Handles HTTP redirects, emits analytics events asynchronously |
 | **analytics-service** | Python / FastAPI | Ingests redirect events, exposes aggregated stats |
+| **frontend-service** | React / Vite | Web UI for shortening URLs and viewing redirect stats; served by nginx |
 
-All three services communicate over HTTP within the cluster. Each service owns its own PostgreSQL database — no shared schemas.
+The backend services communicate over HTTP within the cluster. Each backend service owns its own PostgreSQL database — no shared schemas.
 
 ---
 
@@ -61,7 +65,8 @@ SQL migration files are maintained in `services/<svc>/migrations/` (source of tr
 ├── services/
 │   ├── url-service/            # TypeScript / Fastify
 │   ├── redirect-service/       # Go
-│   └── analytics-service/      # Python / FastAPI
+│   ├── analytics-service/      # Python / FastAPI
+│   └── frontend-service/       # React / Vite → nginx
 │
 ├── infra/aks/
 │   ├── 00-network/             # VNet, subnets
@@ -172,10 +177,13 @@ Provisioned with **Terraform** in three layers (each with independent state):
 
 ## 📊 Observability
 
-All three services expose Prometheus metrics at `/metrics` (not publicly exposed via ingress). Metrics are scraped by Prometheus via `ServiceMonitor` resources.
+All services expose Prometheus metrics at `/metrics` (not publicly exposed via ingress). Metrics are scraped by Prometheus via `ServiceMonitor` resources.
 
-- **Grafana dashboards** — RPS, p95 latency, and top routes for all three services
+- **Grafana dashboards** — RPS, p95 latency, and top routes for all services
 - **PrometheusRules** — availability alerting and latency SLO burn-rate rules (fast + slow burn, page + ticket severity)
+- **Distributed tracing** — url-service and redirect-service emit OTLP traces → OpenTelemetry Collector → Grafana Tempo
+- **Log aggregation** — Grafana Alloy (DaemonSet) collects structured JSON logs from all pods, parses `service` and `level` as indexed labels, and ships to Loki; probe logs (`/health`, `/ready`, `/metrics`) are filtered out
+- **Cross-signal correlation** — Grafana datasources link traces ↔ logs ↔ metrics using `trace_id` and `request_id` fields
 
 ---
 
@@ -185,4 +193,5 @@ All three services expose Prometheus metrics at `/metrics` (not publicly exposed
 - [url-service](services/url-service/README.md)
 - [redirect-service](services/redirect-service/README.md)
 - [analytics-service](services/analytics-service/README.md)
+- [frontend-service](services/frontend-service/README.md)
 - [Historical raw manifests](k8s/README.md)

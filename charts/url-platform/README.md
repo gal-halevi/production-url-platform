@@ -1,6 +1,6 @@
 # 🚢 URL Platform — Helm Chart
 
-This directory contains the **Helm chart** for the URL Platform. It packages all application-level Kubernetes resources for all three services, PostgreSQL, ingress, and monitoring.
+This directory contains the **Helm chart** for the URL Platform. It packages all application-level Kubernetes resources for all four services, PostgreSQL, ingress, and monitoring.
 
 Deployments are fully **GitOps-driven via ArgoCD**. The chart is never applied manually with `helm` in production — ArgoCD renders it against environment-specific values files stored in the [gitops repo](https://github.com/gal-halevi/production-url-platform-gitops).
 
@@ -12,9 +12,10 @@ Deployments are fully **GitOps-driven via ArgoCD**. The chart is never applied m
 - **url-service** — TypeScript/Fastify, short URL creation and resolution
 - **redirect-service** — Go, HTTP redirect handler with async analytics emit
 - **analytics-service** — Python/FastAPI, event ingestion and stats
+- **frontend-service** — React/Vite SPA served by nginx
 - **Flyway migration Jobs** — schema migrations for url-service and analytics-service
-- **Ingress** — ingress-nginx routing for all three services
-- **ServiceMonitors** — Prometheus scrape config for all three services
+- **Ingress** — ingress-nginx routing for all four services
+- **ServiceMonitors** — Prometheus scrape config for url-service, redirect-service, and analytics-service
 - **PrometheusRules** — availability alerting and latency SLO burn-rate rules
 
 ---
@@ -28,7 +29,7 @@ Resources are deployed in strict order using ArgoCD sync waves. Each wave comple
 | 0 | PostgreSQL Deployment + Service + PVC | Database must be running before anything else |
 | 1 | ConfigMaps | Config available before Jobs or Deployments start |
 | 2 | Flyway migration Jobs | Schema migrations run before app Deployments |
-| 3 | url-service, redirect-service, analytics-service Deployments | Apps start only after migrations complete |
+| 3 | url-service, redirect-service, analytics-service, frontend-service Deployments | Apps start only after migrations complete |
 
 This eliminates race conditions between application startup and schema readiness without any application-level retry logic.
 
@@ -74,6 +75,8 @@ images:
     tag: sha-cb47b20
   analyticsService:
     tag: sha-3ec2b0a
+  frontendService:
+    tag: sha-4fd91aa
 ```
 
 ---
